@@ -113,7 +113,8 @@ PanGene-O-Meter requires a file containing a list of annotated genomes in [*GenB
 **When using the tool in published research, please cite:**
 -   Ashkenazy H and Weigel D,<br>
     \"PanGene-O-Meter: Intra-Species Diversity Based on Gene-Content\",<br>
-    [https://github.com/HaimAshk/PanGene-O-Meter](https://github.com/HaimAshk/PanGene-O-Meter) (2025)
+    *bioRxiv* 2025.09.01.673544;
+    [doi: 10.1101/2025.09.01.673544](https://doi.org/10.1101/2025.09.01.673544)
 
     **When using `--pangenome_alg PanX` (or for default run) please also cite:**
     -   Ding W, Baumdicker F, Neher RA,<br>

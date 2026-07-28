@@ -3,7 +3,7 @@ Quantifying bacterial genomes' gene-content similarity and gene-content-based de
 
 Introduction
 ============
-Bacterial genome evolution is shaped to a great extent by horizontal gene transfer, detectable as genes with a presence-absence pattern of variation that does not follow phylogenetic relationships across the majority of the genome. While average nucleotide identity (ANI) is the most common measure to measure bacterial genome similarity, its ability to capture gene-content differences is limited, and is use therefore often misses a major factor for functional variability. **PanGene-O-Meter provide an orthogonal gene-content-based method to quantify similarity between bacterial genomes, leveraging knowledge of pan-genome structure and relationships between orthology groups.** PanGene-O-Meter, provides a higher level of granularity than ANI when classifying bacterial isolates of the same species. Furthermore, PanGene-O-Meter is useful for efficient bacterial genomes clustering, allowing for facile selection of one or several 'representative' genomes, effectively de-duplicating a set of genomes by their gene content. 
+Bacterial genome evolution is shaped to a great extent by horizontal gene transfer, detectable as genes with a presence-absence pattern of variation that does not follow phylogenetic relationships across the majority of the genome. While average nucleotide identity (ANI) is the most common measure to measure bacterial genome similarity, its ability to capture gene-content differences is limited, and is use therefore often misses a major factor for functional variability. **PanGene-O-Meter provide an complementary gene-content-based method to quantify similarity between bacterial genomes, leveraging knowledge of pan-genome structure and relationships between orthology groups.** PanGene-O-Meter, provides a higher level of granularity than ANI when classifying bacterial isolates of the same species. Furthermore, PanGene-O-Meter is useful for efficient bacterial genomes clustering, allowing for facile selection of one or several 'representative' genomes, effectively de-duplicating a set of genomes by their gene content. 
 
 ## Table of contents
   * [Pipeline overview](#pipeline-overview)
@@ -20,7 +20,7 @@ Bacterial genome evolution is shaped to a great extent by horizontal gene transf
 
 $$GCSj(pS1,pS2)=\frac{M11}{(M01+M10+M11)}$$
 
-Where $M11$ represents the total number of elements (orthology-groups) for which both $pS1$ and $pS2$ have a value of 1; $M01$ represents the total number of elements for which the value of $pS1$ is $0$ and $pS1$ is $1$; and $M10$ represents the total number of elements for which the value of $pS1$ is $1$ and the value of $pS2$ is $0$.</span>
+Where $M11$ represents the total number of elements (orthology-groups) for which both $pS1$ and $pS2$ have a value of 1; $M01$ represents the total number of elements for which the value of $pS1$ is $0$ and $pS2$ is $1$; and $M10$ represents the total number of elements for which the value of $pS1$ is $1$ and the value of $pS2$ is $0$.
 
 Alternatively, the GCS can be defined by the shared pangenes, based on their overlap coefficient \($GCSo$\).  This approach reduces the impact of partial genomes on the GCS metric.
 
@@ -108,7 +108,7 @@ PanGene-O-Meter requires a file containing a list of annotated genomes in [*GenB
 * `--reuse_PanGenome`: If this option is specified, the PanGenome construction step will be skipped, and existing files from previous runs in the output directory will be reused. By default, the program will override and execute all steps anew.
 
 #### *GeneContRep* Clustering Parameters:
-* `--GCS_method <Method>`: Select the gene-content similarity metric to be used in the *GeneContRep* step. Options are `GCSj` or `GCSJo`, with the default being `GCSj`.
+* `--GCS_method <Method>`: Select the gene-content similarity metric to be used in the *GeneContRep* step. Options are `GCSj` or `GCSo`, with the default being `GCSj`.
 * `--CGS_clustering_cutoff <Cutoff>`: Set the cutoff value for gene-content similarity clustering during the *GeneContRep* step. The value should be between `0` and `1`, with the default being `0.9`.
 
 ## Citing and Credit
@@ -128,7 +128,7 @@ PanGene-O-Meter requires a file containing a list of annotated genomes in [*GenB
     -   Buchfink, B.J., Barbé, É., Ashkenazy, H., Reuter K., Kennedy J.A., Drost H.G.,<br>
         \"Clustering the protein universe of life using DIAMOND DeepClust\",<br>
         *Nat Methods* **23, 724–727 (2026)**;
-        [[doi: 10.1101/2023.01.24.525373](https://doi.org/10.1101/2023.01.24.525373)](https://doi.org/10.1038/s41592-026-03030-z)
+        [[doi: 10.1038/s41592-026-03030-z](https://doi.org/10.1038/s41592-026-03030-z)]
 
 ## Output files
 #### Phyletic Patterns

@@ -125,10 +125,10 @@ PanGene-O-Meter requires a file containing a list of annotated genomes in [*GenB
         [doi: 10.1093/nar/gkx977](https://doi.org/10.1093/nar/gkx977).
  
     **When using `--pangenome_alg DIAMONDClust` please also cite:**
-    -   Buchfink B, Ashkenazy H, Reuter K, Kennedy JA, Drost HG,<br>
-        \"Sensitive clustering of protein sequences at tree-of-life scale using DIAMOND DeepClust\",<br>
-        *bioRxiv* 2023.01.24.525373;
-        [doi: 10.1101/2023.01.24.525373](https://doi.org/10.1101/2023.01.24.525373)
+    -   Buchfink, B.J., Barbé, É., Ashkenazy, H., Reuter K., Kennedy J.A., Drost H.G.,<br>
+        \"Clustering the protein universe of life using DIAMOND DeepClust\",<br>
+        *Nat Methods* **23, 724–727 (2026)**;
+        [[doi: 10.1101/2023.01.24.525373](https://doi.org/10.1101/2023.01.24.525373)](https://doi.org/10.1038/s41592-026-03030-z)
 
 ## Output files
 #### Phyletic Patterns
@@ -150,6 +150,3 @@ PanGene-O-Meter requires a file containing a list of annotated genomes in [*GenB
 Support
 =======
 PanGene-O-Meter is actively supported and developed software. Please use the [issue tracker](https://github.com/HaimAshk/PanGene-O-Meter/issues) for malfunctions and the [GitHub discussions](https://github.com/HaimAshk/PanGene-O-Meter/discussions) for questions, comments, feature requests, etc.
-
-<img src="https://www.seekpng.com/png/detail/137-1379498_work-in-progress.png" alt="Work In Progress@seekpng.com" height=60 width=60> <br>
-**THE CODE IS STILL UNDER DEVELOPMENT -- PLEASE VISIT AGAIN SOON**

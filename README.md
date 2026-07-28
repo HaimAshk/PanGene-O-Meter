@@ -32,11 +32,11 @@ $$GCSo(pS1,pS2)=\frac{M11}{(min(M01+M11,M10+M11))}$$
 ### Installing
 0. If not already installed, install miniconda on your system
 ```
-wget https://repo.continuum.io/miniconda/Miniconda2-latest-Linux-x86_64.sh
-bash Miniconda2-latest-Linux-x86_64.sh
-export PATH=~/miniconda2/bin:$PATH
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+export PATH=~/miniconda3/bin:$PATH
 ```
-2. Create a new environment for PanGeneOmeter
+1. Create a new environment for PanGeneOmeter
 ```
 conda create -n PanGeneOmeter python==2.7.*
 ```
@@ -58,6 +58,8 @@ conda env update --file $CONDA_PREFIX/PanGeneOmeter_github/PanGeneOmeter/PanGene
 mv $CONDA_PREFIX/PanGeneOmeter_github/PanGeneOmeter/PanGeneOmeter.pl $CONDA_PREFIX/bin
 cp $CONDA_PREFIX/PanGeneOmeter_github/PanX_Patch/sf_extract_sequences.py $CONDA_PREFIX/panx_github/scripts/
 ```
+
+Note: PanGene-O-Meter itself is Perl-based and does not require Python. Python 2.7 is needed  for PanX, which installs and runs without issue in a dedicated environment (e.g. via conda/mamba). Please follow the instructions above to create a dedicated environment for PanGene-O-Meter.
 
 ### Installation troubleshooting
 * If pip installation fails \[previous steps ends with error like: `CondaEnvException: Pip failed` or typing `pip` results in an error like: `ImportError: No module named pip._internal.cli.main`\]

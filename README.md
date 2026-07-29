@@ -30,12 +30,8 @@ $$GCSo(pS1,pS2)=\frac{M11}{(min(M01+M11,M10+M11))}$$
 
 ## Quick start
 ### Installing
-0. If not already installed, install miniconda on your system
-```
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash Miniconda3-latest-Linux-x86_64.sh
-export PATH=~/miniconda3/bin:$PATH
-```
+0. If conda is not already installed, we recommend installing Miniforge (community-maintained, uses the free conda-forge channel): https://github.com/conda-forge/miniforge
+Any recent conda distribution works; we have tested installation with Miniforge and Miniconda3. PanGene-O-Meter does not depend on a specific conda version.
 1. Create a new environment for PanGeneOmeter
 ```
 conda create -n PanGeneOmeter python==2.7.*

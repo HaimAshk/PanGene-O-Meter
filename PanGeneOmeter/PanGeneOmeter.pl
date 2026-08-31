@@ -23,7 +23,7 @@ my $DIAMOND_CLUST_PATH="diamond";
 # PanGene-O-Meter
 
 
-my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank foramt> --outDir <full path output direcory>
+my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank format> --outDir <full path output direcory>
  \tOptional parameters:
  \t--threads <number of threads> default=1
  \t--prefix_name <Prefix to add to the output files> default=\"\"
@@ -31,9 +31,9 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
  \t--help --> print help and exit
   \t[PanGenome construction]
  \t\t--pangenome_alg <PanX | DIAMONDClust> default=PanX
- \t\t--diamond_pid <percent identity to clusrer sequence with DIAMONDClust> default=80
+ \t\t--diamond_pid <percent identity to cluster sequence with DIAMONDClust> default=80
  \t\t--diamnod_cover <mutual-coverage cutoff to be used in DIAMONDClust>, default=70
- \t\t--reuse_PanGenome --> if provided the PanGenome construction step is skipped and the avalable files in the out dir (from previous runs) are used. deafult: override and start all steps.
+ \t\t--reuse_PanGenome --> if provided the PanGenome construction step is skipped and the available files in the out dir (from previous runs) are used. default: override and start all steps.
  \t[GeneContRep clustering]
  \t\t--GCS_method <GCSj |GCSJo>, default=GCSJ --> gene-content similarity metric to use in the GeneContRep step
  \t\t--CGS_clustering_cutoff <{0-1}>, default=0.9 --> cutoff for the GCS clustering for GeneContRep step
@@ -47,7 +47,7 @@ my @orig_ARGV = @ARGV;
 my ($in_gbk_list,$out_dir_base,$ignore_private_genes,$threads,$PanGenomeAlg,$skip_all_vs_all,$Prefix_Name,$GCS_method,$clustering_cutoff,$diamond_pid,$diamnod_cover,$reuse_PanGenome,$print_help,$in_metadata_file);
 
 
-# set default value for optional arguemnts
+# set default value for optional arguments
 $ignore_private_genes=0;
 $threads=1;
 $print_help=0;
@@ -66,15 +66,15 @@ my $getoptResult = GetOptions ( "in_gbk_list_file=s"=>\$in_gbk_list,  # list of 
                                 # optional parameters
                                 "ignore_private_genes!"=>\$ignore_private_genes,     # Flag to indicate private genes should be ignored in the GCS scores, default: noignore_private_genes [Option does not take an argument and may be negated, i.e. prefixed by "no". E.g. "foo!" will allow --foo (with value 1) and -nofoo (with value 0). The option variable will be set to 1, or 0 if negated.
                                 "threads:i"=>\$threads,                              # Number of threads to use, default: 8 [: means that this parameter is optional]
-                                "pangenome_alg:s"=>\$PanGenomeAlg,                   # Angorithm to use in the PanGenome construction step, {PanX|DIAMONDClust}, default: PanX
+                                "pangenome_alg:s"=>\$PanGenomeAlg,                   # Algorithm to use in the PanGenome construction step, {PanX|DIAMONDClust}, default: PanX
                                 "skip_all_vs_all!"=>\$skip_all_vs_all,               # flag to skip all-vs-all calculations [Option does not take an argument and may be negated, i.e. prefixed by "no". E.g. "foo!" will allow --foo (with value 1) and -nofoo (with value 0). The option variable will be set to 1, or 0 if negated.]
                                 "prefix_name:s"=>\$Prefix_Name,                      # Prefix to add to the output files, default=""
                                 "GCS_method:s"=>\$GCS_method,                        # metric to use in the GeneContRep step {GCSj|GCSJo}, default: GCSJ
                                 "CGS_clustering_cutoff:s"=>\$clustering_cutoff,      # cutoff for the GCS clustering for GeneContRep step [0-1], default: 0.9
-                                "diamond_pid:i"=>\$diamond_pid,                      # percent identity to clusrer sequence in DIAMONDClust, default: 80
+                                "diamond_pid:i"=>\$diamond_pid,                      # percent identity to cluster sequence in DIAMONDClust, default: 80
                                 "diamnod_cover:i"=>\$diamnod_cover,                  # mutual-coverage cutoff to be used in DIAMONDClust, default: 70
-                                "reuse_PanGenome!"=>\$reuse_PanGenome,               # if provided will slip the PanGenome construction step, otherwise the relevant PanGenome directories and files are DELETED
-                                "in_metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first coulmn equals to the genome id
+                                "reuse_PanGenome!"=>\$reuse_PanGenome,               # if provided will skip the PanGenome construction step, otherwise the relevant PanGenome directories and files are DELETED
+                                "in_metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first column equals to the genome id
                                 "help!"=>\$print_help        
 );
 if ($print_help==1) {print $help_usage; exit(0);}

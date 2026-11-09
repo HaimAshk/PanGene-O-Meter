@@ -10,6 +10,7 @@ use Getopt::Long;
 use FindBin qw($Bin);
 use Archive::Tar;
 use Cwd qw(getcwd abs_path);
+use File::Spec;
 use POSIX qw(strftime);
 use File::Glob qw/bsd_glob/;
 
@@ -2017,28 +2018,26 @@ sub exit_on_error {
 }
 
 sub resolve_path {
+    # Returns (absolute_path, "YES"|"NO" = path exists). The path does not have to exist yet:
+    # symlinks and '..' are resolved on the part that exists, the rest is appended unchanged.
     my $user_path=shift;
     my $resolved_path=$user_path;
-    
-    my $path_exists="NA";
-    if($user_path =~ /^~/) {
-        # my $home = File::HomeDir->my_home;
-        # $resolved_path =~ s/^~/$home/;
-        $resolved_path=File::Glob::bsd_glob($user_path);
-
-    }   
-
-    if($user_path !~ m!^/!) {
-        $resolved_path = getcwd . "/$user_path";
+    if ($user_path =~ /^~/) {
+        ($resolved_path)=File::Glob::bsd_glob($user_path);
     }
-
-    $resolved_path = abs_path($resolved_path);
-
-    if(defined $resolved_path && -d $resolved_path) {
-        $path_exists="YES";
-    } else {
-        $path_exists="NO";
+    $resolved_path = File::Spec->rel2abs($resolved_path);
+    $resolved_path =~ s{/+$}{} unless $resolved_path eq "/";
+    my ($existing,$rest)=($resolved_path,"");
+    while ($existing ne "/" and !-e $existing) {
+        $existing =~ s{/([^/]*)$}{};
+        $rest = "/$1$rest";
+        $existing = "/" if $existing eq "";
     }
+    my $real = abs_path($existing);
+    $real = $existing unless defined $real;
+    $resolved_path = (($real eq "/") ? "" : $real).$rest;
+    $resolved_path = "/" if $resolved_path eq "";
+    my $path_exists = (-d $resolved_path) ? "YES" : "NO";
     return ($resolved_path,$path_exists);
 }
 sub process_list_of_faa

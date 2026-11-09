@@ -9,7 +9,7 @@ use List::Util qw(min);
 use Getopt::Long;
 use FindBin qw($Bin);
 use Archive::Tar;
-use Cwd;
+use Cwd qw(getcwd abs_path);
 use POSIX qw(strftime);
 use File::Glob qw/bsd_glob/;
 
@@ -128,7 +128,8 @@ if ((($input_type eq "FAA") || ($input_type eq "SINGLE_FAA")) and $PanGenomeAlg 
 if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
 my $user_out_dir=$out_dir_base;
 # resolve relative path
-my ($out_dir_base,$out_path_exists)=resolve_path($user_out_dir);
+my $out_path_exists;
+($out_dir_base,$out_path_exists)=resolve_path($user_out_dir);
 if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
 
 
@@ -305,7 +306,7 @@ if ($input_type eq "GBFF")
 } elsif ($input_type eq "SINGLE_FAA") {
     convert_names_single_faa($in_gbk_list,$single_faa_file_for_DIAMOND); 
 } else {
-    exit_on_error {"[FATAL ERROR] --input_type '$input_type' is not supported, please select one of the following input_type values and resubmit {GBFF | FAA | SINGLE_FAA}"}
+    exit_on_error("[FATAL ERROR] --input_type '$input_type' is not supported, please select one of the following input_type values and resubmit {GBFF | FAA | SINGLE_FAA}");
 }
 close ($GENOME_NAME_MAP);
 close ($LIST_OF_GENOMES_PANX);

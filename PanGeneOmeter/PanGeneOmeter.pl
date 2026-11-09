@@ -13,12 +13,18 @@ use Cwd qw(getcwd abs_path);
 use File::Spec;
 use POSIX qw(strftime);
 use File::Glob qw/bsd_glob/;
+use FindBin qw($RealBin);
+use lib $RealBin;   # PGOM_*.pm modules live next to this script
+use PGOM_Names   qw(assign_short_names write_name_map);
+use PGOM_Convert qw(prepare_genomes);
+use PGOM_Input   qw(rename_pattern pa_genome_sizes);
+use PGOM_Matrix  qw(read_matrix_any write_canonical_matrix);
 
 
 # use IO::Zlib;
 # use IO::Compress::Gzip qw(gzip $GzipError);
 
-my $PANX_PATH=$ENV{CONDA_PREFIX}."/panx_github/panX.py";
+my $PANX_PATH=$ENV{PGOM_PANX} || ((defined $ENV{CONDA_PREFIX} ? $ENV{CONDA_PREFIX} : "")."/panx_github/panX.py"); # PanX is optional; PGOM_PANX overrides the location
 
 # my $PANX_PATH="/ebio/abt6_projects/small_projects/hashkenazy/Programs/PanX/pan-genome-analysis";
 # my $DIAMOND_CLUST_PATH="/ebio/abt6_projects/small_projects/hashkenazy/Programs/DIAMOND_v2.1.9/diamond";
@@ -33,13 +39,16 @@ my $DIAMOND_CLUST_PATH="diamond";
 
 my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank format> --outDir <full path output direcory>
  \tOptional parameters:
- \t--input_type <gbff|faa|single_faa> default=gbff
+ \t--input_type <gbff|fna|faa|single_faa> default=gbff [fna: genome FASTA files, genes are predicted with pyrodigal]
+ \t--phyletic_pattern_file <presence/absence matrix: Microbializer .fas, Panaroo/Roary .Rtab or .csv> --> skips protein extraction and clustering; --in_gbk_list_file is not needed
+ \t--pattern_format <auto|rtab|roary|fasta|csv> default=auto --> format of --phyletic_pattern_file
+ \t--protein_extractor <builtin|panx> default=builtin --> how proteins are taken from GenBank files for DIAMONDClust
  \t--threads <number of threads> default=1
  \t--prefix_name <Prefix to add to the output files> default=\"\"
  \t--metadata_file  <tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\"
  \t--help --> print help and exit
   \t[PanGenome construction]
- \t\t--pangenome_alg <PanX | DIAMONDClust> default=PanX
+ \t\t--pangenome_alg <DIAMONDClust | PanX> default=DIAMONDClust
  \t\t--diamond_pid <percent identity to cluster sequence with DIAMONDClust> default=80
  \t\t--diamnod_cover <mutual-coverage cutoff to be used in DIAMONDClust>, default=70
  \t\t--reuse_PanGenome --> if provided the PanGenome construction step is skipped and the available files in the out dir (from previous runs) are used. deafult: override and start all steps.
@@ -57,11 +66,12 @@ my @orig_ARGV = @ARGV;
 my ($in_gbk_list,$out_dir_base,$input_type,$ignore_private_genes,$threads,$PanGenomeAlg,$skip_all_vs_all,$Prefix_Name,$GCS_method,$clustering_cutoff,$diamond_pid,$diamnod_cover,$reuse_PanGenome,$print_help,$in_metadata_file);
 
 
+my ($phyletic_pattern_file,$pattern_format,$protein_extractor)=(undef,"auto","builtin");
 # set default value for optional arguments
 $ignore_private_genes=0;
 $threads=1;
 $print_help=0;
-$PanGenomeAlg="PanX";
+$PanGenomeAlg="DIAMONDClust";
 $skip_all_vs_all=0;
 $Prefix_Name="";
 $GCS_method="GCSj";
@@ -71,7 +81,7 @@ $diamnod_cover=70;
 $reuse_PanGenome=0;
 $in_metadata_file="NA";
 $input_type="GBFF";
-my $getoptResult = GetOptions ( "in_gbk_list_file=s"=>\$in_gbk_list,  # list of the genomes and annotations to analyze (each file is expected to be in a GeneBank format) [= means that this parameter is required, s means string]
+my $getoptResult = GetOptions ( "in_gbk_list_file|in_genome_list_file=s"=>\$in_gbk_list,  # list of the genomes and annotations to analyze (each file is expected to be in a GeneBank format) [= means that this parameter is required, s means string]
                                 "outDir=s"=>\$out_dir_base,      # path for the output directory
 
                                 # optional parameters
@@ -87,12 +97,15 @@ my $getoptResult = GetOptions ( "in_gbk_list_file=s"=>\$in_gbk_list,  # list of 
                                 "diamnod_cover:i"=>\$diamnod_cover,                  # mutual-coverage cutoff to be used in DIAMONDClust, default: 70
                                 "reuse_PanGenome!"=>\$reuse_PanGenome,               # if provided will skip the PanGenome construction step, otherwise the relevant PanGenome directories and files are DELETED
                                 "in_metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first column equals to the genome id
+                                "phyletic_pattern_file:s"=>\$phyletic_pattern_file,  # presence/absence matrix as input (skips protein extraction and clustering)
+                                "pattern_format:s"=>\$pattern_format,                # auto|rtab|roary|fasta|csv
+                                "protein_extractor:s"=>\$protein_extractor,          # builtin|panx (GenBank -> proteins for DIAMONDClust)
                                 "help!"=>\$print_help        
 );
 if ($print_help==1) {print $help_usage; exit(0);}
 
 # arguemnts validation
-if (!defined $in_gbk_list) {die "[FATAL ERROR] --in_gbk_list is obligatory argument. The minimal usage is: perl $0 --in_gbk_list GENOME_LIST --outDir OUTPUT_PATH\n";}
+if (!defined $in_gbk_list and !defined $phyletic_pattern_file) {die "[FATAL ERROR] --in_gbk_list is obligatory argument. The minimal usage is: perl $0 --in_gbk_list GENOME_LIST --outDir OUTPUT_PATH\n";}
 if (!defined $out_dir_base) {die "[FATAL ERROR] --outDir is obligatory argument. The minimal usage is: perl $0 --in_gbk_list GENOME_LIST --outDir OUTPUT_PATH\n";}
 
 # optional 
@@ -109,7 +122,7 @@ my $PanXExtra_params=""; ### ToDO: support from the cmdline
 # my $clustering_cutoff;
 # my $diamond_pid;
 # my $diamnod_cover;
-if (!defined $PanGenomeAlg) {$PanGenomeAlg="PANX"} else {$PanGenomeAlg=uc($PanGenomeAlg);}
+if (!defined $PanGenomeAlg) {$PanGenomeAlg="DIAMONDCLUST"} else {$PanGenomeAlg=uc($PanGenomeAlg);}
 if (!defined $input_type) {$input_type="gbff"} else {$input_type=uc($input_type);}
 if (!defined $threads) {$threads=8;}
 if (defined $skip_all_vs_all) {if ($skip_all_vs_all==0) {$skip_all_vs_all="NO";} else {$skip_all_vs_all="YES";}} # to correctly handle params
@@ -123,8 +136,28 @@ if (!defined $diamnod_cover) {$diamnod_cover=70;}
 if (!defined $reuse_PanGenome) {$reuse_PanGenome="NO"} elsif ($reuse_PanGenome==0) {$reuse_PanGenome="NO";} elsif ($reuse_PanGenome==1) {$reuse_PanGenome="YES"} else {print "[UNKNOWN OPTION] --reuse_PanGenome option was not interpreted correctly, [value='$reuse_PanGenome']' --> exit\n";exit (1);}
 # add option to provide tsv metadata file --> otherwise will take the one PanX extract
 # validate arguments
-if ((($input_type eq "FAA") || ($input_type eq "SINGLE_FAA")) and $PanGenomeAlg eq "PANX") {exit_on_error("[FATAL_ERROR] PanX does not support '$input_type' input, please use '--pangenome_alg DIAMONDClust'")}
+if ((($input_type eq "FAA") || ($input_type eq "SINGLE_FAA") || ($input_type eq "FNA")) and $PanGenomeAlg eq "PANX" and !defined $phyletic_pattern_file) {exit_on_error("[FATAL_ERROR] PanX does not support '$input_type' input, please use '--pangenome_alg DIAMONDClust'")}
 
+# --- validation of the new input options ---
+$protein_extractor=uc($protein_extractor);
+$pattern_format=lc($pattern_format);
+if ($protein_extractor ne "BUILTIN" and $protein_extractor ne "PANX") {die "[FATAL_ERROR] --protein_extractor can be only 'builtin' or 'panx', got '$protein_extractor'\n";}
+if (defined $phyletic_pattern_file and $phyletic_pattern_file ne "") {
+    if (!-e $phyletic_pattern_file) {die "[FATAL_ERROR] --phyletic_pattern_file '$phyletic_pattern_file' does not exist\n";}
+    $PanGenomeAlg="MATRIX"; $input_type="MATRIX";
+} else {
+    $phyletic_pattern_file=undef;
+    if ($input_type ne "GBFF" and $input_type ne "FNA" and $input_type ne "FAA" and $input_type ne "SINGLE_FAA") {die "[FATAL_ERROR] --input_type '$input_type' is not supported, please select one of: gbff | fna | faa | single_faa\n";}
+}
+if ($PanGenomeAlg eq "DIAMONDCLUST" and system("$DIAMOND_CLUST_PATH version > /dev/null 2>&1")!=0) {
+    die "[FATAL_ERROR] DIAMOND ('$DIAMOND_CLUST_PATH') was not found or does not run. Install it (e.g. 'conda install -c bioconda diamond') or add it to PATH.\n";
+}
+if ($input_type eq "FNA" or ($input_type eq "GBFF" and $PanGenomeAlg eq "DIAMONDCLUST")) {
+    my $pyrodigal_bin=$ENV{PGOM_PYRODIGAL} || "pyrodigal";
+    if ($input_type eq "FNA" and system("$pyrodigal_bin --version > /dev/null 2>&1")!=0) {
+        die "[FATAL_ERROR] pyrodigal ('$pyrodigal_bin') was not found or does not run; it is needed for --input_type fna. Install it (e.g. 'conda install -c bioconda pyrodigal').\n";
+    }
+}
 # output structure
 if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
 my $user_out_dir=$out_dir_base;
@@ -146,7 +179,7 @@ if ($PanGenomeAlg eq "PANX") {
 elsif ($PanGenomeAlg eq "DIAMONDCLUST") {
     $PanGenomeAlg_for_file_names="DIAMOND_DeepClust";
 } else {
-    $PanGenomeAlg_for_file_names=$PanGenomeAlg;
+    $PanGenomeAlg_for_file_names=($PanGenomeAlg eq "MATRIX") ? "InputMatrix" : $PanGenomeAlg;
 }
 my $clustering_cutoff_for_print=$clustering_cutoff*100;
 my $log_file="";
@@ -186,6 +219,10 @@ if ($PanGenomeAlg eq "PANX") {
 elsif ($PanGenomeAlg eq "DIAMONDCLUST") {
     if (defined $Prefix_Name and $Prefix_Name ne "") {$Out_PhyleticPattern_prefix=$out_dir_base.$Prefix_Name.".".$PanGenomeAlg_for_file_names.".mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".PhyleticPattern";} 
     else {$Out_PhyleticPattern_prefix=$out_dir_base.$PanGenomeAlg_for_file_names.".mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".PhyleticPattern";}
+}
+
+if ($PanGenomeAlg eq "MATRIX") {
+    $Out_PhyleticPattern_prefix=$out_dir_base.((defined $Prefix_Name and $Prefix_Name ne "") ? $Prefix_Name."." : "").$PanGenomeAlg_for_file_names.".PhyleticPattern";
 }
 
 my $Out_all_vs_all_J_overlap_distance_file="";
@@ -233,7 +270,9 @@ if ($reuse_PanGenome eq "NO")
         }
     }
 }
-if (!-d $PanX_input_gbk_dir) {make_path($PanX_input_gbk_dir) or exit_on_error ("[ERROR] Can not create the output directory: '$PanX_input_gbk_dir' $!");} 
+# PanX is needed only for --pangenome_alg PanX, or when explicitly requested as the protein extractor
+my $use_panx = ($PanGenomeAlg eq "PANX" or ($PanGenomeAlg eq "DIAMONDCLUST" and $input_type eq "GBFF" and $protein_extractor eq "PANX")) ? 1 : 0;
+if ($use_panx and !-d $PanX_input_gbk_dir) {make_path($PanX_input_gbk_dir) or exit_on_error ("[ERROR] Can not create the output directory: '$PanX_input_gbk_dir' $!");} 
 
 # define a name for single_faa_file_for_DIAMOND
 my $single_faa_file_for_DIAMOND="";
@@ -243,16 +282,74 @@ else {$single_faa_file_for_DIAMOND=$out_dir_base."All_proteins.faa";}
 # Process input GBK list
 my $genomes_name_index_file=$out_dir_base."genome_names.map.txt";
 my $genome_list_for_PanX=$out_dir_base."List_of_genomes_for_PanX.txt";
-open (my $LIST_OF_GENOMES_PANX,">",$genome_list_for_PanX) || exit_on_error ("[ERROR] Can't open LIST_OF_GENOMES_PANX '$genome_list_for_PanX' $!");
+my $LIST_OF_GENOMES_PANX;
+if ($use_panx) {open ($LIST_OF_GENOMES_PANX,">",$genome_list_for_PanX) || exit_on_error ("[ERROR] Can't open LIST_OF_GENOMES_PANX '$genome_list_for_PanX' $!");}
 open (my $GENOME_NAME_MAP,">",$genomes_name_index_file) || exit_on_error ("[ERROR] Can't open GENOME_NAME_MAP '$genomes_name_index_file' $!");
-open (my $GBK_LIST,"<",$in_gbk_list) || exit_on_error ("[ERROR] Can't open GBK_LIST '$in_gbk_list' $!");
 my $genome_number=0;
-# read the list of GBK files
-my @list_of_gbk=<$GBK_LIST>;
-chomp (@list_of_gbk);
-close ($GBK_LIST);
+my $builtin_stats_file;
+my @list_of_gbk=();
+if ($input_type ne "MATRIX")
+{
+    open (my $GBK_LIST,"<",$in_gbk_list) || exit_on_error ("[ERROR] Can't open GBK_LIST '$in_gbk_list' $!");
+    # read the list of GBK files
+    @list_of_gbk=<$GBK_LIST>;
+    chomp (@list_of_gbk);
+    close ($GBK_LIST);
+}
 
-if ($input_type eq "GBFF")
+if ($input_type eq "MATRIX")
+{
+    # presence/absence matrix provided by the user (Microbializer, Panaroo, Roary ...)
+    my $pa=eval { read_matrix_any($phyletic_pattern_file, format=>$pattern_format) };
+    if (!$pa) {my $e=$@; $e=~s/\s+$//; exit_on_error($e);}
+    my $nm=eval { assign_short_names($pa->{order}, names=>1) };
+    if (!$nm) {my $e=$@; $e=~s/\s+$//; exit_on_error($e);}
+    $pa=rename_pattern($pa,$nm->{old2new});
+    write_name_map($genomes_name_index_file,$nm->{rows});
+    %GenomesNames_Old2New=%{$nm->{old2new}};
+    %GenomesNames_New2Old=%{$nm->{new2old}};
+    %genomes_length=%{pa_genome_sizes($pa)};
+    $genome_number=scalar(@{$pa->{order}});
+    $builtin_stats_file=$out_dir_base.((defined $Prefix_Name and $Prefix_Name ne "") ? $Prefix_Name."." : "")."genome_stats.tsv";
+    open (my $STATS,">",$builtin_stats_file) || exit_on_error ("[ERROR] Can't open '$builtin_stats_file' $!");
+    print $STATS "genome\tn_present_genes\n";
+    foreach my $s (@{$pa->{order}}) {print $STATS "$s\t$genomes_length{$s}\n";}
+    close ($STATS);
+    my ($fas_file,$csv_file,$og_file)=write_canonical_matrix($pa,$Out_PhyleticPattern_prefix);
+    my $fas01_file=$Out_PhyleticPattern_prefix.".01.fas"; # same name as the other input types
+    move($fas_file,$fas01_file) || exit_on_error ("[ERROR] Can't rename '$fas_file' to '$fas01_file' $!");
+    push (@all_output_files,($fas01_file,$csv_file,$og_file));
+    $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
+    my $matrix_msg="$datestring [INFO] Phyletic pattern matrix '$phyletic_pattern_file' (format: $pa->{format}): $genome_number genomes x $pa->{n_og} orthology groups. No genome lengths are available: genomes are ordered by their number of present genes when choosing cluster representatives.";
+    print "$matrix_msg\n"; print $LOG "$matrix_msg\n";
+    foreach my $w (@{$pa->{warnings}}) {print "[WARNING] $w\n"; print $LOG "[WARNING] $w\n";}
+}
+elsif (($input_type eq "FNA") or ($input_type eq "GBFF" and $PanGenomeAlg eq "DIAMONDCLUST" and $protein_extractor eq "BUILTIN"))
+{
+    # built-in: GenBank (CDS features) or FASTA genomes (pyrodigal) -> proteins named S<n>|locus, no PanX needed
+    $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
+    print $LOG "$datestring [INFO] before filtering we have ",scalar(@list_of_gbk)," input genome files\n";
+    $builtin_stats_file=$out_dir_base.((defined $Prefix_Name and $Prefix_Name ne "") ? $Prefix_Name."." : "")."genome_stats.tsv";
+    my $prep=eval { prepare_genomes(\@list_of_gbk,$out_dir_base,threads=>$threads,map_file=>$genomes_name_index_file,combined_faa=>$single_faa_file_for_DIAMOND,stats_file=>$builtin_stats_file) };
+    if (!$prep) {my $e=$@; $e=~s/\s+$//; exit_on_error($e);}
+    $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
+    if (scalar(@{$prep->{dropped}})>0)
+    {
+        my @err=map {"[ERROR] the genome file '$_->[0]' was ignored: $_->[1]"} @{$prep->{dropped}};
+        print "\n==== ERRORS in input genomes: =======\n",join("\n",@err),"\n";
+        print $LOG "\n==== ERRORS in input genomes: =======\n",join("\n",@err),"\n";
+    }
+    foreach my $w (@{$prep->{warnings}}) {print "[WARNING] $w\n"; print $LOG "[WARNING] $w\n";}
+    %GenomesNames_Old2New=%{$prep->{old2new}};
+    %GenomesNames_New2Old=%{$prep->{new2old}};
+    %genomes_length=%{$prep->{genomes_length}};
+    $genome_number=scalar(@{$prep->{order}});
+    my $prep_msg=(scalar(@{$prep->{dropped}})>0)
+        ? scalar(@{$prep->{dropped}})." genome(s) were removed; the run continues with $genome_number genomes."
+        : "All $genome_number input genomes gave proteins.";
+    print "$datestring [INFO] $prep_msg\n"; print $LOG "$datestring [INFO] $prep_msg\n";
+}
+elsif ($input_type eq "GBFF")
 {
     # filter GBK without CDS
     $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
@@ -318,7 +415,7 @@ if ($input_type eq "GBFF")
     exit_on_error("[FATAL ERROR] --input_type '$input_type' is not supported, please select one of the following input_type values and resubmit {GBFF | FAA | SINGLE_FAA}");
 }
 close ($GENOME_NAME_MAP);
-close ($LIST_OF_GENOMES_PANX);
+close ($LIST_OF_GENOMES_PANX) if defined $LIST_OF_GENOMES_PANX;
     
 # Finish preparing the gbk files
 
@@ -347,7 +444,7 @@ if ($PanGenomeAlg eq "PANX")
     if ($ans ne "OK") {exit_on_error ("[ERROR] 'Builed_PhyleticPattern_from_PanX_aa_aln_list(OG_aa_aln_files,$Out_PhyleticPattern_prefix, \"NA\",\"PANX_PANGENOMETER\")' --> FAILED\n");}
 } elsif ($PanGenomeAlg eq "DIAMONDCLUST")
 {
-    if ($input_type eq "GBFF")
+    if ($input_type eq "GBFF" and $protein_extractor eq "PANX")
     {
         # use PanX just as method to QA the genebank and extract the protein_faa files used in DIAMONDClust --> https://github.com/neherlab/pan-genome-analysis/blob/master/step-tutorials.md
         my $PanX_cmd="cd $PanX_input_gbk_dir; $PANX_PATH -mo -rxm $raxml_exec -fn $PanX_out_dir -sl $genome_list_for_PanX  $PanXExtra_params -sitr -t $threads -cg 0.7 -ct -st 1 3 4 > ".$PanX_out_dir."PanX_extract_proteins.std 2>&1"; ##  7 8 9
@@ -361,10 +458,10 @@ if ($PanGenomeAlg eq "PANX")
     if ($input_type eq "FAA")
     {
         @faa_files = grep {/\.faa$/} <$input_faa_dir/*>; # user input converted s names by process_list_of_faa function
-    } elsif ($input_type eq "GBFF") {
+    } elsif ($input_type eq "GBFF" and $protein_extractor eq "PANX") {
         @faa_files = grep {/\.faa$/} <$PanX_out_dir/protein_faa/*>; # extracted by PanX from gbff ## ToDo: test if it work for very large number of files 
     }
-    if ($input_type eq "FAA" || $input_type eq "GBFF") {
+    if ($input_type eq "FAA" || ($input_type eq "GBFF" and $protein_extractor eq "PANX")) {
         concatenate_FASTA_files($single_faa_file_for_DIAMOND,\@faa_files);
     } # else we already have this file generated before by: convert_names_single_faa
 
@@ -404,6 +501,9 @@ if ($PanGenomeAlg eq "PANX")
     my ($ans)=build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix,"\\|",1);
     if ($ans ne "OK") {exit_on_error ("[ERROR] 'build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix, \"\|\",\"1\")' --> FAILED\n");}
 
+} elsif ($PanGenomeAlg eq "MATRIX")
+{
+    # the phyletic pattern files were already written from the user matrix
 } else {
     exit_on_error ("[ERROR] possible options for PanGenome construction algorithms are: PANX or DIAMONDCLUST [value provided unknown: '$PanGenomeAlg']\n");
 }
@@ -463,9 +563,15 @@ foreach my $file (@all_output_files) {
 my $out_metadata_file=$out_dir_base."meta_data_file.txt";
 if ($in_metadata_file ne "NA") {copy ($in_metadata_file,$out_metadata_file)}
 else {
-    if ($input_type eq "GBFF")
+    if ($input_type eq "GBFF" and $use_panx)
     {
         copy ($PanX_out_dir."/metainfo.tsv",$out_metadata_file);
+        update_tax_name($out_metadata_file,\%GenomesNames_New2Old,[(0)],"\t","T");
+    }
+    elsif (defined $builtin_stats_file and -e $builtin_stats_file)
+    {
+        # no PanX metainfo: use the genome statistics (source, length, number of proteins)
+        copy ($builtin_stats_file,$out_metadata_file);
         update_tax_name($out_metadata_file,\%GenomesNames_New2Old,[(0)],"\t","T");
     }
 }

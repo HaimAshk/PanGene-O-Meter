@@ -1,0 +1,12 @@
+# PanGene-O-Meter environment (independent of PanX)
+#   conda env create -f environment.yml && conda activate pangeneometer
+name: pangeneometer
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - perl
+  - diamond>=2.1
+  - pyrodigal
+  # optional, only for --pangenome_alg PanX or for building matrices with Panaroo:
+  # - panaroo

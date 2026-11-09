@@ -50,7 +50,7 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
   \t[PanGenome construction]
  \t\t--pangenome_alg <DIAMONDClust | PanX> default=DIAMONDClust
  \t\t--diamond_pid <percent identity to cluster sequence with DIAMONDClust> default=80
- \t\t--diamnod_cover <mutual-coverage cutoff to be used in DIAMONDClust>, default=70
+ \t\t--diamond_cover <mutual-coverage cutoff to be used in DIAMONDClust>, default=70
  \t\t--reuse_PanGenome --> if provided the PanGenome construction step is skipped and the available files in the out dir (from previous runs) are used. deafult: override and start all steps.
  \t[GeneContRep clustering]
  \t\t--GCS_method <GCSj |GCSJo>, default=GCSJ --> gene-content similarity metric to use in the GeneContRep step
@@ -92,11 +92,11 @@ my $getoptResult = GetOptions ( "in_gbk_list_file|in_genome_list_file=s"=>\$in_g
                                 "skip_all_vs_all!"=>\$skip_all_vs_all,               # flag to skip all-vs-all calculations [Option does not take an argument and may be negated, i.e. prefixed by "no". E.g. "foo!" will allow --foo (with value 1) and -nofoo (with value 0). The option variable will be set to 1, or 0 if negated.]
                                 "prefix_name:s"=>\$Prefix_Name,                      # Prefix to add to the output files, default=""
                                 "GCS_method:s"=>\$GCS_method,                        # metric to use in the GeneContRep step {GCSj|GCSJo}, default: GCSJ
-                                "GCS_clustering_cutoff:s"=>\$clustering_cutoff,      # cutoff for the GCS clustering for GeneContRep step [0-1], default: 0.9
+                                "GCS_clustering_cutoff|CGS_clustering_cutoff:s"=>\$clustering_cutoff,      # cutoff for the GCS clustering for GeneContRep step [0-1], default: 0.9
                                 "diamond_pid:i"=>\$diamond_pid,                      # percent identity to cluster sequence in DIAMONDClust, default: 80
-                                "diamnod_cover:i"=>\$diamnod_cover,                  # mutual-coverage cutoff to be used in DIAMONDClust, default: 70
+                                "diamnod_cover|diamond_cover:i"=>\$diamnod_cover,                  # mutual-coverage cutoff to be used in DIAMONDClust, default: 70
                                 "reuse_PanGenome!"=>\$reuse_PanGenome,               # if provided will skip the PanGenome construction step, otherwise the relevant PanGenome directories and files are DELETED
-                                "in_metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first column equals to the genome id
+                                "in_metadata_file|metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first column equals to the genome id
                                 "phyletic_pattern_file:s"=>\$phyletic_pattern_file,  # presence/absence matrix as input (skips protein extraction and clustering)
                                 "pattern_format:s"=>\$pattern_format,                # auto|rtab|roary|fasta|csv
                                 "protein_extractor:s"=>\$protein_extractor,          # builtin|panx (GenBank -> proteins for DIAMONDClust)

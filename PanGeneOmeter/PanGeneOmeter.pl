@@ -1941,14 +1941,26 @@ sub update_tax_name {
 sub  concatenate_FASTA_files {
     my ($out_single_fasta_file,$fasta_files_ArrRef)=@_;
     open (my $OUT,">",$out_single_fasta_file) || exit_on_error ("[ERROR] concatenate_FASTA_files can't open OUT '$out_single_fasta_file' for writing $!");
+    my %seen_ids; my $n_renamed=0; my @renamed_examples=();
     foreach my $in_file (@{$fasta_files_ArrRef}) {
         open (my $IN,"<",$in_file) || exit_on_error ("[ERROR] concatenate_FASTA_files can't open IN file '$in_file' for reading $!");
-        my @in=<$IN>;
-        print $OUT @in;
+        while (my $line=<$IN>) {
+            chomp ($line);
+            if ($line=~/^>(\S+)(.*)/) {
+                my ($id,$rest)=($1,$2);
+                if ($seen_ids{$id}++) { # DIAMOND requires unique IDs
+                    $n_renamed++;
+                    my $new_id=$id."_dup".$seen_ids{$id};
+                    if (scalar(@renamed_examples)<5) {push (@renamed_examples,"$id -> $new_id");}
+                    $line=">".$new_id.$rest;
+                }
+            }
+            print $OUT $line,"\n";
+        }
         close ($IN);
-        @in=();
     }
     close ($OUT);
+    if ($n_renamed>0) {print "[WARNING] concatenate_FASTA_files: $n_renamed sequence IDs were not unique (several CDS sharing one locus tag) and were renamed with a _dupN suffix, e.g. ".join("; ",@renamed_examples)."\n";}
     print "[INFO] concatenate_FASTA_files: the output file '$out_single_fasta_file' was created\n";
 }
 

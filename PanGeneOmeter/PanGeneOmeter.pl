@@ -277,8 +277,11 @@ if ($input_type eq "GBFF")
         exit_on_error ("[FATAL_ERROR] Could not identify any coding sequences on the provided gbk files. Please make sure they include CDS tags and resubmit.\n");
     } else {
         $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-        print "$datestring [INFO] After filtering genomes that do not have enough CDS, the run continues with ".scalar(@{$good_list_ArrRef})." genomes.\n";
-        print $LOG "$datestring [INFO] After filtering genomes that do not have enough CDS, the run continues with ".scalar(@{$good_list_ArrRef})." genomes.\n";
+        my $filter_msg = (scalar(@{$errors_ArrRef})>0)
+            ? scalar(@{$errors_ArrRef})." genome(s) were removed because they do not have enough CDS; the run continues with ".scalar(@{$good_list_ArrRef})." genomes."
+            : "All ".scalar(@{$good_list_ArrRef})." genomes have enough CDS; extracting the proteins of all of them.";
+        print "$datestring [INFO] $filter_msg\n";
+        print $LOG "$datestring [INFO] $filter_msg\n";
     }
     #if (scalar (@{$good_list_ArrRef})>0) {
     #    print "\n==== GOOD: =======\n";

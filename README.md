@@ -69,7 +69,7 @@ PanGene-O-Meter needs the presence/absence of orthology groups in every genome. 
 
 ``perl PanGeneOmeter/PanGeneOmeter.pl --in_gbk_list_file list_of_gbk --outDir output_directory --threads 16``
 
-**2. Genome sequences in FASTA format** (one file per genome, genes are predicted with [pyrodigal](https://github.com/althonos/pyrodigal)):
+**2. Genome sequences in FASTA format** (one file per genome, all contigs of a draft assembly in the same file; genes are predicted with [pyrodigal](https://github.com/althonos/pyrodigal)):
 
 ``perl PanGeneOmeter/PanGeneOmeter.pl --in_genome_list_file list_of_fna --input_type fna --outDir output_directory --threads 16``
 
@@ -100,7 +100,7 @@ Whatever the input, genomes are renamed to `S1 ... SN` (in list order) for the a
 ### Mandatory parameters:
 * `--outDir <Directory>`: Provide the full path to the directory where output files will be saved.
 * **One** of the following inputs:
-  * `--in_gbk_list_file <File>` (alias `--in_genome_list_file`): Specify the path to the file containing a list of genomes to be analyzed, one file per line. Each genome is in [*GenBank Flat File*](https://www.ncbi.nlm.nih.gov/genbank/samplerecord/) format (default), or in FASTA format with `--input_type fna`.
+  * `--in_gbk_list_file <File>` (alias `--in_genome_list_file`): Specify the path to the file containing a list of genomes to be analyzed, one file per line. Each genome is in [*GenBank Flat File*](https://www.ncbi.nlm.nih.gov/genbank/samplerecord/) format (default), or in FASTA format with `--input_type fna` (one file per genome; a genome may have several contigs).
   * `--phyletic_pattern_file <File>`: A presence/absence matrix (see [formats](#presenceabsence-matrix-formats---phyletic_pattern_file)).
 
 ### Additional (optional) parameters:

@@ -25,9 +25,14 @@ my $DIAMOND_CLUST_PATH="diamond";
 
 # PanGene-O-Meter
 
+### ToDO:
+# 1. For code clarity, change both the argument name and the variable name of 'in_gbk_list' since now it can also accept list_of_faa or single formatted faa file
+# * see if this helps should be added somewhere: \t--all_proteins_faa <single FASTA file with all proteins in format: '>TAX|ProtID'. IMPORTANT: will supress protein extraction from gbk files [--in_gbk_list_file is ignored]> 
+#.  this --all_proteins_faa is not in use. the mechanism was replaced by --input_type==single_faa
 
 my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank format> --outDir <full path output direcory>
  \tOptional parameters:
+ \t--input_type <gbff|faa|single_faa> default=gbff
  \t--threads <number of threads> default=1
  \t--prefix_name <Prefix to add to the output files> default=\"\"
  \t--metadata_file  <tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\"
@@ -40,6 +45,7 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
  \t[GeneContRep clustering]
  \t\t--GCS_method <GCSj |GCSJo>, default=GCSJ --> gene-content similarity metric to use in the GeneContRep step
  \t\t--GCS_clustering_cutoff <{0-1}>, default=0.9 --> cutoff for the GCS clustering for GeneContRep step
+ \t\t--skip_all_vs_all --> flag to skip all-vs-all calculations distance step
  \n";
 
 ### TO ADD: use calculated PanGenome flag --> otherwise should delete the PanX directory before starting a new one
@@ -47,7 +53,7 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
 if (@ARGV<4) {die $help_usage;}
 my @orig_ARGV = @ARGV;
 # print "[QA INFO] perl $0 @ARGV\n";
-my ($in_gbk_list,$out_dir_base,$ignore_private_genes,$threads,$PanGenomeAlg,$skip_all_vs_all,$Prefix_Name,$GCS_method,$clustering_cutoff,$diamond_pid,$diamnod_cover,$reuse_PanGenome,$print_help,$in_metadata_file);
+my ($in_gbk_list,$out_dir_base,$input_type,$ignore_private_genes,$threads,$PanGenomeAlg,$skip_all_vs_all,$Prefix_Name,$GCS_method,$clustering_cutoff,$diamond_pid,$diamnod_cover,$reuse_PanGenome,$print_help,$in_metadata_file);
 
 
 # set default value for optional arguments
@@ -63,10 +69,12 @@ $diamond_pid=80;
 $diamnod_cover=70;
 $reuse_PanGenome=0;
 $in_metadata_file="NA";
+$input_type="GBFF";
 my $getoptResult = GetOptions ( "in_gbk_list_file=s"=>\$in_gbk_list,  # list of the genomes and annotations to analyze (each file is expected to be in a GeneBank format) [= means that this parameter is required, s means string]
                                 "outDir=s"=>\$out_dir_base,      # path for the output directory
 
                                 # optional parameters
+                                "input_type:s"=>\$input_type,                        # faa | gbff | single_faa
                                 "ignore_private_genes!"=>\$ignore_private_genes,     # Flag to indicate private genes should be ignored in the GCS scores, default: noignore_private_genes [Option does not take an argument and may be negated, i.e. prefixed by "no". E.g. "foo!" will allow --foo (with value 1) and -nofoo (with value 0). The option variable will be set to 1, or 0 if negated.
                                 "threads:i"=>\$threads,                              # Number of threads to use, default: 8 [: means that this parameter is optional]
                                 "pangenome_alg:s"=>\$PanGenomeAlg,                   # Algorithm to use in the PanGenome construction step, {PanX|DIAMONDClust}, default: PanX
@@ -101,7 +109,7 @@ my $PanXExtra_params=""; ### ToDO: support from the cmdline
 # my $diamond_pid;
 # my $diamnod_cover;
 if (!defined $PanGenomeAlg) {$PanGenomeAlg="PANX"} else {$PanGenomeAlg=uc($PanGenomeAlg);}
-
+if (!defined $input_type) {$input_type="gbff"} else {$input_type=uc($input_type);}
 if (!defined $threads) {$threads=8;}
 if (defined $skip_all_vs_all) {if ($skip_all_vs_all==0) {$skip_all_vs_all="NO";} else {$skip_all_vs_all="YES";}} # to correctly handle params
 if (!defined $skip_all_vs_all) {$skip_all_vs_all="NO";} else {$skip_all_vs_all=uc($skip_all_vs_all);}
@@ -114,7 +122,7 @@ if (!defined $diamnod_cover) {$diamnod_cover=70;}
 if (!defined $reuse_PanGenome) {$reuse_PanGenome="NO"} elsif ($reuse_PanGenome==0) {$reuse_PanGenome="NO";} elsif ($reuse_PanGenome==1) {$reuse_PanGenome="YES"} else {print "[UNKNOWN OPTION] --reuse_PanGenome option was not interpreted correctly, [value='$reuse_PanGenome']' --> exit\n";exit (1);}
 # add option to provide tsv metadata file --> otherwise will take the one PanX extract
 # validate arguments
-
+if ((($input_type eq "FAA") || ($input_type eq "SINGLE_FAA")) and $PanGenomeAlg eq "PANX") {exit_on_error("[FATAL_ERROR] PanX does not support '$input_type' input, please use '--pangenome_alg DIAMONDClust'")}
 
 # output structure
 if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
@@ -126,6 +134,7 @@ if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
 
 my $PanX_out_dir=$out_dir_base."PanX/out/";
 my $PanX_input_gbk_dir=$PanX_out_dir."input_GenBank/";
+my $input_faa_dir=$out_dir_base."input_faa/";
 
 
 my $PanGenomeAlg_for_file_names="";
@@ -143,6 +152,7 @@ if (defined $Prefix_Name and $Prefix_Name ne "") {$log_file=$out_dir_base.$Prefi
 else {$log_file=$out_dir_base."PanGeneOmeter.".$PanGenomeAlg_for_file_names.".".$GCS_method.".".$clustering_cutoff_for_print.".log";}
 # constatnt
 my @gbk_suffix=(".gbk",".gbff","gb");
+my @faa_suffix=(".faa",".fasta",".fa");
 
 my @all_output_files=(); # will be populated during the run
 
@@ -223,6 +233,11 @@ if ($reuse_PanGenome eq "NO")
 }
 if (!-d $PanX_input_gbk_dir) {make_path($PanX_input_gbk_dir) or exit_on_error ("[ERROR] Can not create the output directory: '$PanX_input_gbk_dir' $!");} 
 
+# define a name for single_faa_file_for_DIAMOND
+my $single_faa_file_for_DIAMOND="";
+if (defined $Prefix_Name and $Prefix_Name ne "") {$single_faa_file_for_DIAMOND=$out_dir_base.$Prefix_Name.".All_proteins.faa";} 
+else {$single_faa_file_for_DIAMOND=$out_dir_base."All_proteins.faa";}
+
 # Process input GBK list
 my $genomes_name_index_file=$out_dir_base."genome_names.map.txt";
 my $genome_list_for_PanX=$out_dir_base."List_of_genomes_for_PanX.txt";
@@ -235,58 +250,62 @@ my @list_of_gbk=<$GBK_LIST>;
 chomp (@list_of_gbk);
 close ($GBK_LIST);
 
-# filter GBK without CDS
-$datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-print $LOG "$datestring [INFO] before filtering we have ",scalar(@list_of_gbk)," gbk files\n";
-my ($good_list_ArrRef,$errors_ArrRef)=filter_gbk_without_cds(\@list_of_gbk);
-# my ($good_list_ArrRef,$errors_ArrRef)=validate_CDS_remove_db_xref_lines(\@list_of_gbk,$tmp_dir);
-$datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-if ((scalar @{$errors_ArrRef})==0) # nothing was filtered
+if ($input_type eq "GBFF")
 {
-    print $LOG "$datestring [INFO] PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files provided by the user\n";
-}
-if ((scalar @{$errors_ArrRef})>0)
-{
-    print "$datestring [INFO] After filtering out erroneous gbk files, PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files\n";
-    print "\n==== ERRORS in GBKs: =======\n";
-    print join("\n",@{$errors_ArrRef}),"\n";
-    print $LOG "$datestring [INFO] After filtering out erroneous gbk files, PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files\n";
-    print $LOG "\n==== ERRORS in GBKs: =======\n";
-    print $LOG join("\n",@{$errors_ArrRef}),"\n";
-}
-if (scalar (@{$good_list_ArrRef})==0) {
-    exit_on_error ("[FATAL_ERROR] Could not identify any coding sequences on the provided gbk files. Please make sure they include CDS tags and resubmit.\n");
-} else {
+    # filter GBK without CDS
     $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-    print "$datestring [INFO] After filtering genomes that do not have enough CDS, the run continues with ".scalar(@{$good_list_ArrRef})." genomes.\n";
-    print $LOG "$datestring [INFO] After filtering genomes that do not have enough CDS, the run continues with ".scalar(@{$good_list_ArrRef})." genomes.\n";
-}
-#if (scalar (@{$good_list_ArrRef})>0) {
-#    print "\n==== GOOD: =======\n";
-#    print join("\n",@{$good_list_ArrRef}),"\n";
-#}
-# copy the good ones and change names
-# while (my $gbk_file=<$GBK_LIST>)
-foreach my $gbk_file (@{$good_list_ArrRef})
-{
-#    chomp ($gbk_file);
-    $genome_number++;
-    my $new_Sname="S".$genome_number;
-    my $gbk_file_base=fileparse($gbk_file, @gbk_suffix);
-    my $cp_gbk_file=$PanX_input_gbk_dir.$new_Sname.".gbk";
-    copy ($gbk_file, $cp_gbk_file) || exit_on_error ("[FATAL_ERROR] Can't copy '$gbk_file' to '$cp_gbk_file' $!");
+    print $LOG "$datestring [INFO] before filtering we have ",scalar(@list_of_gbk)," gbk files\n";
+    my ($good_list_ArrRef,$errors_ArrRef)=filter_gbk_without_cds(\@list_of_gbk);
+    # my ($good_list_ArrRef,$errors_ArrRef)=validate_CDS_remove_db_xref_lines(\@list_of_gbk,$tmp_dir);
+    $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
+    print $LOG "$datestring [INFO] after filtering we have ",scalar(@{$good_list_ArrRef})," gbk files\n";
+    if ((scalar @{$errors_ArrRef})>0)
+    {
+        print "\n==== ERRORS in GBKs: =======\n";
+        print join("\n",@{$errors_ArrRef}),"\n";
+        print $LOG "\n==== ERRORS in GBKs: =======\n";
+        print $LOG join("\n",@{$errors_ArrRef}),"\n";
+    }
+    if (scalar (@{$good_list_ArrRef})==0) {
+        exit_on_error ("[FATAL_ERROR] Could not identify any coding sequences on the provided gbk files. Please make sure they include CDS tags and resubmit.\n");
+    } else {
+        $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
+        print "$datestring [INFO] After filtering genomes that do not have enough CDS, the run continues with ".scalar(@{$good_list_ArrRef})." genomes.\n";
+        print $LOG "$datestring [INFO] After filtering genomes that do not have enough CDS, the run continues with ".scalar(@{$good_list_ArrRef})." genomes.\n";
+    }
+    #if (scalar (@{$good_list_ArrRef})>0) {
+    #    print "\n==== GOOD: =======\n";
+    #    print join("\n",@{$good_list_ArrRef}),"\n";
+    #}
+    # copy the good ones and change names
+    # while (my $gbk_file=<$GBK_LIST>)
+    foreach my $gbk_file (@{$good_list_ArrRef})
+    {
+    #    chomp ($gbk_file);
+        $genome_number++;
+        my $new_Sname="S".$genome_number;
+        my $gbk_file_base=fileparse($gbk_file, @gbk_suffix);
+        my $cp_gbk_file=$PanX_input_gbk_dir.$new_Sname.".gbk";
+        copy ($gbk_file, $cp_gbk_file) || exit_on_error ("[FATAL_ERROR] Can't copy '$gbk_file' to '$cp_gbk_file' $!");
 
-    print $GENOME_NAME_MAP "$gbk_file\t$gbk_file_base\t$new_Sname\n";
-    print $LIST_OF_GENOMES_PANX $new_Sname.".gbk\n";
-    
-    if (!exists  $GenomesNames_Old2New{$gbk_file_base}) {$GenomesNames_Old2New{$gbk_file_base}=$new_Sname;}
-    else {exit_on_error ("[FATAL_ERROR] More than one genome with the same name was provided: '$gbk_file_base' is duplicate!. Please make sure all names are unique and run again...\n");}
-    $GenomesNames_New2Old{$new_Sname}=$gbk_file_base;
+        print $GENOME_NAME_MAP "$gbk_file\t$gbk_file_base\t$new_Sname\n";
+        print $LIST_OF_GENOMES_PANX $new_Sname.".gbk\n";
+        
+        if (!exists  $GenomesNames_Old2New{$gbk_file_base}) {$GenomesNames_Old2New{$gbk_file_base}=$new_Sname;}
+        else {exit_on_error ("[FATAL_ERROR] More than one genome with the same name was provided: '$gbk_file_base' is duplicate!. Please make sure all names are unique and run again...\n");}
+        $GenomesNames_New2Old{$new_Sname}=$gbk_file_base;
 
-    # get the genome length
-    my ($genome_length)=get_genome_length_from_gbk($cp_gbk_file);
-    # print "$gbk_file_base\t$genome_length\n";# QA
-    $genomes_length{$new_Sname}=$genome_length;
+        # get the genome length
+        my ($genome_length)=get_genome_length_from_gbk($cp_gbk_file);
+        # print "$gbk_file_base\t$genome_length\n";# QA
+        $genomes_length{$new_Sname}=$genome_length;
+    }
+} elsif ($input_type eq "FAA") {
+    process_list_of_faa(\@list_of_gbk);
+} elsif ($input_type eq "SINGLE_FAA") {
+    convert_names_single_faa($in_gbk_list,$single_faa_file_for_DIAMOND); 
+} else {
+    exit_on_error {"[FATAL ERROR] --input_type '$input_type' is not supported, please select one of the following input_type values and resubmit {GBFF | FAA | SINGLE_FAA}"}
 }
 close ($GENOME_NAME_MAP);
 close ($LIST_OF_GENOMES_PANX);
@@ -318,20 +337,27 @@ if ($PanGenomeAlg eq "PANX")
     if ($ans ne "OK") {exit_on_error ("[ERROR] 'Builed_PhyleticPattern_from_PanX_aa_aln_list(OG_aa_aln_files,$Out_PhyleticPattern_prefix, \"NA\",\"PANX_PANGENOMETER\")' --> FAILED\n");}
 } elsif ($PanGenomeAlg eq "DIAMONDCLUST")
 {
-    # use PanX just as method to QA the genebank and extract the protein_faa files used in DIAMONDClust --> https://github.com/neherlab/pan-genome-analysis/blob/master/step-tutorials.md
-    my $PanX_cmd="cd $PanX_input_gbk_dir; $PANX_PATH -mo -rxm $raxml_exec -fn $PanX_out_dir -sl $genome_list_for_PanX  $PanXExtra_params -sitr -t $threads -cg 0.7 -ct -st 1 3 4 > ".$PanX_out_dir."PanX_extract_proteins.std 2>&1"; ##  7 8 9
-    $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-    print $LOG "$datestring [INFO] $PanX_cmd\n";
-    system ($PanX_cmd);
-
+    if ($input_type eq "GBFF")
+    {
+        # use PanX just as method to QA the genebank and extract the protein_faa files used in DIAMONDClust --> https://github.com/neherlab/pan-genome-analysis/blob/master/step-tutorials.md
+        my $PanX_cmd="cd $PanX_input_gbk_dir; $PANX_PATH -mo -rxm $raxml_exec -fn $PanX_out_dir -sl $genome_list_for_PanX  $PanXExtra_params -sitr -t $threads -cg 0.7 -ct -st 1 3 4 > ".$PanX_out_dir."PanX_extract_proteins.std 2>&1"; ##  7 8 9
+        $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
+        print $LOG "$datestring [INFO] $PanX_cmd\n";
+        system ($PanX_cmd);
+    }
+    
     # concate all proteins faa
-    my @faa_files = grep {/\.faa$/} <$PanX_out_dir/protein_faa/*>; ### ToDo: test if it work for very large number of files 
-    my $single_faa_file_for_DIAMOND="";
+    my @faa_files=();
+    if ($input_type eq "FAA")
+    {
+        @faa_files = grep {/\.faa$/} <$input_faa_dir/*>; # user input converted s names by process_list_of_faa function
+    } elsif ($input_type eq "GBFF") {
+        @faa_files = grep {/\.faa$/} <$PanX_out_dir/protein_faa/*>; # extracted by PanX from gbff ## ToDo: test if it work for very large number of files 
+    }
+    if ($input_type eq "FAA" || $input_type eq "GBFF") {
+        concatenate_FASTA_files($single_faa_file_for_DIAMOND,\@faa_files);
+    } # else we already have this file generated before by: convert_names_single_faa
 
-    if (defined $Prefix_Name and $Prefix_Name ne "") {$single_faa_file_for_DIAMOND=$out_dir_base.$Prefix_Name.".All_proteins.faa";} 
-    else {$single_faa_file_for_DIAMOND=$out_dir_base."All_proteins.faa";}
-
-    concatenate_FASTA_files($single_faa_file_for_DIAMOND,\@faa_files);
     # cluster by DIAMOND
     my $diamond_clusters_results_file="";
     if (defined $Prefix_Name and $Prefix_Name ne "") {$diamond_clusters_results_file=$out_dir_base.$Prefix_Name.".All_proteins.diamond_cluster.mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".tsv";}
@@ -427,17 +453,23 @@ foreach my $file (@all_output_files) {
 my $out_metadata_file=$out_dir_base."meta_data_file.txt";
 if ($in_metadata_file ne "NA") {copy ($in_metadata_file,$out_metadata_file)}
 else {
-    copy ($PanX_out_dir."/metainfo.tsv",$out_metadata_file);
-    update_tax_name($out_metadata_file,\%GenomesNames_New2Old,[(0)],"\t","T");
+    if ($input_type eq "GBFF")
+    {
+        copy ($PanX_out_dir."/metainfo.tsv",$out_metadata_file);
+        update_tax_name($out_metadata_file,\%GenomesNames_New2Old,[(0)],"\t","T");
+    }
 }
 # merge metadata file with the clusters annotation
 my ($clusters_annotation_with_metadata_file)=fileparse($clusters_annotation_file,".txt");
 $clusters_annotation_with_metadata_file=$out_dir_base.$clusters_annotation_with_metadata_file.".and_metadata.txt";
-merge_files($clusters_annotation_file,$out_metadata_file,1,1,$clusters_annotation_with_metadata_file,"\t","\t","\t","YES");
-push (@all_output_files,$clusters_annotation_with_metadata_file);
+if (-e $out_metadata_file)
+{
+    merge_files($clusters_annotation_file,$out_metadata_file,1,1,$clusters_annotation_with_metadata_file,"\t","\t","\t","YES");
+    push (@all_output_files,$clusters_annotation_with_metadata_file);
+}
 
 # merge metadata with the all_vs_pairs
-if ($distance_all_pairs_file ne "NA")
+if (($distance_all_pairs_file ne "NA") and (-e $out_metadata_file))
 {
     my ($dinstance_all_pairs_file_with_metadata)=fileparse($distance_all_pairs_file,".csv");
     $dinstance_all_pairs_file_with_metadata=$out_dir_base.$dinstance_all_pairs_file_with_metadata.".and_metadata.csv";
@@ -658,7 +690,7 @@ sub build_phyletic_pattern_based_on_DIAMONDclusters {
     while (my $line=<$DIAMOND_CLUSTERS>)
     {
         chomp ($line);
-        my ($cluster_name,$cluster_mamber)=split(/\t/,$line);
+        my ($cluster_name,$cluster_member)=split(/\t/,$line);
         
         if ($cluster_name ne $prev_cluster){
             $cluster_id++;
@@ -673,11 +705,11 @@ sub build_phyletic_pattern_based_on_DIAMONDclusters {
         my $species_name="";
         if (uc($species_field) eq "ALL")
         {
-            $species_name=$cluster_mamber; # new seq name
+            $species_name=$cluster_member; # new seq name
         }
         else
         {
-            my @tmp=split(/$spices_del/,$cluster_mamber);
+            my @tmp=split(/$spices_del/,$cluster_member);
             $species_name=$tmp[$species_field-1];
         }
         if (exists $SpeciesNames{$species_name})
@@ -1024,7 +1056,7 @@ sub Builed_PhyleticPattern_from_PanX_aa_aln_list {
 
     my $Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies=$Out_PhyleticPattern_prefix.".clusters_names_and_NumOfSpecies.txt";
     open (my $OUT_NAMES_AND_PREVALENCE,">",$Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies) or exit_on_error ("[ERROR] Builed_PhyleticPattern_from_PanX_aa_aln_list: Could not open OUT_NAMES_AND_PREVALENCE '$Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies' $!\n");
-    print $OUT_NAMES_AND_PREVALENCE "pos\tcluster_name\tcluster_MSA\tPrevalence\tAvg_Copy_Number\n";
+    print $OUT_NAMES_AND_PREVALENCE "pos\tcluster_name\tcluster_MSA\tPrevalence\tAvg_Copy_Number\tClusterSize\n";
     for (my $i=0;$i<scalar(@clusters_names);$i++)
     {
         my $NumOfSpecies_in_cluster=scalar(keys %{$NumOfSpecies_and_Copies_Per_Cluster{$i}});
@@ -1037,7 +1069,7 @@ sub Builed_PhyleticPattern_from_PanX_aa_aln_list {
             $sum=$sum+$NumOfSpecies_and_Copies_Per_Cluster{$i}{$species};
         }
         my $AvgCopyNumber=sprintf("%.3f",$sum/scalar(@Copies_Per_Species));
-        print $OUT_NAMES_AND_PREVALENCE $i+1,"\t$clusters_names[$i]\t$clusters_MSAs[$i]\t$Prevalence\t$AvgCopyNumber\n";
+        print $OUT_NAMES_AND_PREVALENCE $i+1,"\t$clusters_names[$i]\t$clusters_MSAs[$i]\t$Prevalence\t$AvgCopyNumber\t$sum\n";
     }
     close ($OUT_NAMES_AND_PREVALENCE);
     print "[INFO] Out_PhyleticPattern_Clusters_Names_Pos was created: '$Out_PhyleticPattern_Clusters_Names_Pos'\n";
@@ -1667,7 +1699,7 @@ sub cluster_cd_hit_like {
     open (my $FINAL_CLUSTERS_TSV,">",$Final_Clusters_tsv) || exit_on_error ("[ERROR] cluster_cd_hit_like: Can't open FINAL_CLUSTERS_TSV '$Final_Clusters_tsv' $!");
     open (my $FINAL_CLUSTERS_ANNOTATION,">",$Final_Clusters_annotation) || exit_on_error ("[ERROR] cluster_cd_hit_like: Can't open FINAL_CLUSTERS_ANNOTATION '$Final_Clusters_annotation' $!");
     print $LOG1 "List of clusters (by $GCS_method $clustering_cutoff)\n====================================================================================\ncluster_representative\tcluster_size\n";
-    print $FINAL_CLUSTERS_TSV "rep\tcluster_size\tmambers\n";
+    print $FINAL_CLUSTERS_TSV "rep\tcluster_size\tmembers\n";
     print $FINAL_CLUSTERS_ANNOTATION "name\tcluster_id\trep\n";
     my $cluster_id=0;
     foreach my $cluster (sort {scalar @{$Clusters{$b}}<=> scalar @{$Clusters{$a}}} keys %Clusters)
@@ -1798,6 +1830,23 @@ sub count_real_elements_in_array
 	return $counter;
 }
 ### END: source: ###
+
+sub get_genome_length_from_faa
+{
+    my ($faa_file)=@_;
+    my $genome_length=0;
+    open (my $FAA,"<",$faa_file) || exit_on_error ("[ERROR] get_genome_length_from_faa: Failed to open FAA file '$faa_file' $!");
+    while (my $line=<$FAA>)
+    {
+        if ($line!~/^>/)
+        {
+            chomp $line;
+            $genome_length=$genome_length+length($line)*3;
+        }
+    }
+    close ($FAA);
+    return ($genome_length);
+}
 
 sub get_genome_length_from_gbk
 {
@@ -1985,4 +2034,120 @@ sub resolve_path {
         $path_exists="NO";
     }
     return ($resolved_path,$path_exists);
+}
+sub process_list_of_faa
+{
+    my ($good_list_ArrRef)=@_;
+    # This function will iterate the list of FAA file (single faa per tax) and generate the PanX like faa files with the header format: S\d+|protID description
+    
+    # GLOBAL VARS in USE:
+    # @faa_suffix
+    # $GENOME_NAME_MAP
+    # $LIST_OF_GENOMES_PANX
+    # %GenomesNames_New2Old
+    # %GenomesNames_Old2New
+    # $input_faa_dir
+
+    if (! -d $input_faa_dir) {make_path($input_faa_dir) || exit_on_error ("[FATAL_ERROR] Can't create the output directory '$input_faa_dir' $!");}
+
+    foreach my $faa_file (@{$good_list_ArrRef})
+    {
+    #    chomp ($gbk_file);
+        $genome_number++;
+        my $new_Sname="S".$genome_number;
+        my $faa_file_base=fileparse($faa_file, @faa_suffix);
+        my $new_faa_file=$input_faa_dir.$new_Sname.".faa";
+        
+        # copy ($faa_file, $cp_faa_file) || exit_on_error ("[FATAL_ERROR] Can't copy '$faa_file' to '$cp_faa_file' $!");
+
+        print $GENOME_NAME_MAP "$faa_file\t$faa_file_base\t$new_Sname\n";
+        print $LIST_OF_GENOMES_PANX $new_Sname.".faa\n";
+        
+        if (!exists  $GenomesNames_Old2New{$faa_file_base}) {$GenomesNames_Old2New{$faa_file_base}=$new_Sname;}
+        else {exit_on_error ("[FATAL_ERROR] More than one genome with the same name was provided: '$faa_file_base' is duplicate!. Please make sure all names are unique and run again...\n");}
+        $GenomesNames_New2Old{$new_Sname}=$faa_file_base;
+
+        my ($genome_length)=standartize_faa_seq_id_to_include_tax_and_get_genome_length($faa_file,$new_faa_file,$new_Sname);
+        $genomes_length{$new_Sname}=$genome_length;
+    }
+}
+
+sub standartize_faa_seq_id_to_include_tax_and_get_genome_length {
+    my ($faa_file,$new_faa_file,$new_Sname)=@_;
+ 
+    my $genome_length=0;
+    open (my $ORIG_FAA,"<",$faa_file) || exit_on_error ("[ERROR] standartize_faa_seq_id_to_include_tax_and_get_genome_length: Failed to open ORIG_FAA file '$faa_file' $!");
+    open (my $NEW_FAA,">",$new_faa_file) || exit_on_error ("standartize_faa_seq_id_to_include_tax_and_get_genome_length: Can't open NEW_FAA '$new_faa_file': $!");
+        
+    while (my $line=<$ORIG_FAA>)
+    {
+        chomp ($line);
+        if ($line=~/^>(\S+)(.*)/)
+        {
+            my $seq_id=$1;
+            my $desc=$2;
+            
+            $line=">$new_Sname|$seq_id $desc"; # update the new tax name"
+           
+        } else { # sequence line
+            $genome_length=$genome_length+length($line)*3;
+        }
+        print $NEW_FAA "$line\n";
+    }
+    close ($ORIG_FAA);
+    close ($NEW_FAA);
+    return ($genome_length); 
+}
+
+
+
+# change names for a single faa file 
+sub convert_names_single_faa
+{
+    # will update the global hash
+    # $GenomesNames_Old2New{$OldName}=$New_SName;
+    # $GenomesNames_New2Old{$New_SName}=$OldName;
+    # $genomes_length{$new_Sname}
+    # write the the GLOBAL file handle
+    #    $GENOME_NAME_MAP
+    
+    # assumed sequence id format: >TaxID|protID --> would be converting TaxID names to S[1-9]+ 
+    # This is also the format addopted by PanX  
+    my ($original_faa_path,$new_faa_path)=@_;
+    my $genome_number=0;
+    open (my $OLD_FAA,"<",$original_faa_path) || exit_on_error ("convert_names_single_faa: Can't open OLD_FAA '$original_faa_path': $!");
+    open (my $NEW_FAA,">",$new_faa_path) || exit_on_error ("convert_names_single_faa: Can't open NEW_FAA '$new_faa_path': $!");
+    my $new_Sname; 
+    while (my $line=<$OLD_FAA>)
+    {
+        chomp ($line);
+        if ($line=~/>(\S+)(.*)/)
+        {
+            my $seq_id=$1;
+            my $desc=$2;
+            my ($taxID,$protID)=split(/\|/,$seq_id);
+            if (exists $GenomesNames_Old2New{$taxID})
+            {
+                $line=">$GenomesNames_Old2New{$taxID}|$protID $desc"; # update the new tax name
+            }
+            else { # new tax id
+                $genome_number++;
+                $new_Sname="S".$genome_number;
+                $GenomesNames_Old2New{$taxID}=$new_Sname;
+                $GenomesNames_New2Old{$new_Sname}=$taxID;
+                print $GENOME_NAME_MAP "$original_faa_path\t$taxID\t$new_Sname\n";
+                $line=">$new_Sname|$protID $desc"; # update the new tax name
+            }
+        }
+        else { # sequence line --> update the genome length hash
+            if (exists $genomes_length{$new_Sname}){
+                $genomes_length{$new_Sname}=$genomes_length{$new_Sname}+length($line)*3;
+            } else {
+                $genomes_length{$new_Sname}=length($line)*3;
+            }
+        }
+        print $NEW_FAA "$line\n";
+    }
+    close ($OLD_FAA);
+    close ($NEW_FAA);
 }

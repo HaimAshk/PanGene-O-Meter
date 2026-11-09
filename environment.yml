@@ -6,7 +6,8 @@ channels:
   - bioconda
 dependencies:
   - perl
-  - diamond>=2.1
+  - diamond=2.1.10   # the version used for the reference results; v2.1.24 crashes in recluster, v2.1.25 has no recluster
   - pyrodigal
   # optional, only for --pangenome_alg PanX or for building matrices with Panaroo:
   # - panaroo
+

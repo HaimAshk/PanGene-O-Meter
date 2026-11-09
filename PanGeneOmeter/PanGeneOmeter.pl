@@ -152,6 +152,16 @@ if (defined $phyletic_pattern_file and $phyletic_pattern_file ne "") {
 if ($PanGenomeAlg eq "DIAMONDCLUST" and system("$DIAMOND_CLUST_PATH version > /dev/null 2>&1")!=0) {
     die "[FATAL_ERROR] DIAMOND ('$DIAMOND_CLUST_PATH') was not found or does not run. Install it (e.g. 'conda install -c bioconda diamond') or add it to PATH.\n";
 }
+if ($PanGenomeAlg eq "PANX" or ($PanGenomeAlg eq "DIAMONDCLUST" and $input_type eq "GBFF" and $protein_extractor eq "PANX")) {
+    if (!-e $PANX_PATH) {
+        die "[FATAL_ERROR] PanX was requested (--pangenome_alg PanX or --protein_extractor panx) but it was not found at '$PANX_PATH'.\n"
+          . "PanX is optional: the default (--pangenome_alg DIAMONDClust) does not need it.\n"
+          . "Recommended: run PanX in its own (python 2.7) environment with PanX_Patch/pgom_run_panx.pl, which writes a presence/absence matrix,\n"
+          . "and give that matrix to PanGene-O-Meter with --phyletic_pattern_file (see the README).\n"
+          . "To keep using the built-in PanX mode, install PanX with the patch from the 'PanX_Patch' folder, place it at '\$CONDA_PREFIX/panx_github/'\n"
+          . "or set the environment variable PGOM_PANX to the full path of panX.py.\n";
+    }
+}
 if ($input_type eq "FNA" or ($input_type eq "GBFF" and $PanGenomeAlg eq "DIAMONDCLUST")) {
     my $pyrodigal_bin=$ENV{PGOM_PYRODIGAL} || "pyrodigal";
     if ($input_type eq "FNA" and system("$pyrodigal_bin --version > /dev/null 2>&1")!=0) {
@@ -479,17 +489,17 @@ if ($PanGenomeAlg eq "PANX")
     if (defined $Prefix_Name and $Prefix_Name ne "") {$diamond_REclusters_results_file=$out_dir_base.$Prefix_Name.".All_proteins.diamond_cluster.mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".recluster.tsv";}
     else {$diamond_REclusters_results_file=$out_dir_base."All_proteins.diamond_cluster.mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".recluster.tsv";}
 
-    if (-e $diamond_clusters_results_file) # recluster
+    if (-s $diamond_clusters_results_file) # recluster
     {
         my $diamond_recluster_cmd="$DIAMOND_CLUST_PATH recluster -d $single_faa_file_for_DIAMOND --clusters  $diamond_clusters_results_file -o $diamond_REclusters_results_file --approx-id $diamond_pid --mutual-cover $diamnod_cover --masking 0 --soft-masking 0 --comp-based-stats 0 --threads $threads 1> $diamond_REclusters_results_file.std 2>&1";
         $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
         print $LOG "$datestring [INFO] $diamond_recluster_cmd\n";
         system($diamond_recluster_cmd);
     } else {
-        exit_on_error ("[ERROR] Diamond clustering failed, see '$diamond_clusters_results_file.std' for details.");
+        exit_on_error ("[ERROR] Diamond clustering failed or gave an empty result, see '$diamond_clusters_results_file.std' for details. DIAMOND version used: ".`$DIAMOND_CLUST_PATH version 2>&1 | head -1`." (PanGene-O-Meter is tested with the version in environment.yml)");
     }
-    if (!-e $diamond_REclusters_results_file) {
-        exit_on_error ("[ERROR] Diamond reclustering failed, see '$diamond_REclusters_results_file.std' for details.");
+    if (!-s $diamond_REclusters_results_file) {
+        exit_on_error ("[ERROR] Diamond reclustering failed or gave an empty result, see '$diamond_REclusters_results_file.std' for details. DIAMOND version used: ".`$DIAMOND_CLUST_PATH version 2>&1 | head -1`." (PanGene-O-Meter is tested with the version in environment.yml)");
     }
     # recluster
 #    /ebio/abt6_projects7/small_projects/hashkenazy/Programs/DIAMOND_v2.1.9/diamond  recluster -d /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.fas --clusters /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.tsv -o /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.reclust.tsv --mutual-cover 80 --masking 0 --soft-masking 0 --comp-based-stats 0 --approx-id 90 1> /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.reclust.std 2>&1

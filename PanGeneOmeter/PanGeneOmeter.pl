@@ -556,7 +556,7 @@ foreach my $file (@all_output_files) {
     } elsif ($file=~/distance.all_pairs.csv$/) {
         update_tax_name($file,\%GenomesNames_New2Old,[(0,1,9)],",","T");
         $distance_all_pairs_file=$file;
-    } elsif ($file=~/\d+.csv$/) { # the rep CSv phylettic pattern matrix
+    } elsif ($file=~/(\d+.csv|representative_PhP\.csv)$/) { # the rep CSv phylettic pattern matrix
         update_tax_name($file,\%GenomesNames_New2Old,[(0)],",","T");
     } elsif ($file=~/.clstr.txt$/) {
         update_tax_name($file,\%GenomesNames_New2Old,[(2)],"\t","F");
@@ -565,7 +565,7 @@ foreach my $file (@all_output_files) {
     } elsif ($file=~/.clusters_annotation.txt$/) {
         $clusters_annotation_file=$file;
         update_tax_name($file,\%GenomesNames_New2Old,[(0)],"\t","T");
-    } elsif ($file=~/.rep_names$/) {
+    } elsif ($file=~/(\.rep_names|representative_names)$/) {
         update_tax_name($file,\%GenomesNames_New2Old,[(0)],"\t","F");
     }
 }

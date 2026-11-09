@@ -259,11 +259,16 @@ if ($input_type eq "GBFF")
     my ($good_list_ArrRef,$errors_ArrRef)=filter_gbk_without_cds(\@list_of_gbk);
     # my ($good_list_ArrRef,$errors_ArrRef)=validate_CDS_remove_db_xref_lines(\@list_of_gbk,$tmp_dir);
     $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-    print $LOG "$datestring [INFO] after filtering we have ",scalar(@{$good_list_ArrRef})," gbk files\n";
+    if ((scalar @{$errors_ArrRef})==0) # nothing was filtered
+    {
+        print $LOG "$datestring [INFO] PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files provided by the user\n";
+    }
     if ((scalar @{$errors_ArrRef})>0)
     {
+        print "$datestring [INFO] After filtering out erroneous gbk files, PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files\n";
         print "\n==== ERRORS in GBKs: =======\n";
         print join("\n",@{$errors_ArrRef}),"\n";
+        print $LOG "$datestring [INFO] After filtering out erroneous gbk files, PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files\n";
         print $LOG "\n==== ERRORS in GBKs: =======\n";
         print $LOG join("\n",@{$errors_ArrRef}),"\n";
     }

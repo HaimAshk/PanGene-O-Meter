@@ -11,6 +11,9 @@ use FindBin qw($Bin);
 use Archive::Tar;
 use Cwd;
 use POSIX qw(strftime);
+use File::Glob qw/bsd_glob/;
+
+
 # use IO::Zlib;
 # use IO::Compress::Gzip qw(gzip $GzipError);
 
@@ -23,7 +26,7 @@ my $DIAMOND_CLUST_PATH="diamond";
 # PanGene-O-Meter
 
 
-my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank foramt> --outDir <full path output direcory>
+my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank format> --outDir <full path output direcory>
  \tOptional parameters:
  \t--threads <number of threads> default=1
  \t--prefix_name <Prefix to add to the output files> default=\"\"
@@ -31,12 +34,12 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
  \t--help --> print help and exit
   \t[PanGenome construction]
  \t\t--pangenome_alg <PanX | DIAMONDClust> default=PanX
- \t\t--diamond_pid <percent identity to clusrer sequence with DIAMONDClust> default=80
+ \t\t--diamond_pid <percent identity to cluster sequence with DIAMONDClust> default=80
  \t\t--diamnod_cover <mutual-coverage cutoff to be used in DIAMONDClust>, default=70
- \t\t--reuse_PanGenome --> if provided the PanGenome construction step is skipped and the avalable files in the out dir (from previous runs) are used. deafult: override and start all steps.
+ \t\t--reuse_PanGenome --> if provided the PanGenome construction step is skipped and the available files in the out dir (from previous runs) are used. deafult: override and start all steps.
  \t[GeneContRep clustering]
  \t\t--GCS_method <GCSj |GCSJo>, default=GCSJ --> gene-content similarity metric to use in the GeneContRep step
- \t\t--CGS_clustering_cutoff <{0-1}>, default=0.9 --> cutoff for the GCS clustering for GeneContRep step
+ \t\t--GCS_clustering_cutoff <{0-1}>, default=0.9 --> cutoff for the GCS clustering for GeneContRep step
  \n";
 
 ### TO ADD: use calculated PanGenome flag --> otherwise should delete the PanX directory before starting a new one
@@ -47,7 +50,7 @@ my @orig_ARGV = @ARGV;
 my ($in_gbk_list,$out_dir_base,$ignore_private_genes,$threads,$PanGenomeAlg,$skip_all_vs_all,$Prefix_Name,$GCS_method,$clustering_cutoff,$diamond_pid,$diamnod_cover,$reuse_PanGenome,$print_help,$in_metadata_file);
 
 
-# set default value for optional arguemnts
+# set default value for optional arguments
 $ignore_private_genes=0;
 $threads=1;
 $print_help=0;
@@ -66,15 +69,15 @@ my $getoptResult = GetOptions ( "in_gbk_list_file=s"=>\$in_gbk_list,  # list of 
                                 # optional parameters
                                 "ignore_private_genes!"=>\$ignore_private_genes,     # Flag to indicate private genes should be ignored in the GCS scores, default: noignore_private_genes [Option does not take an argument and may be negated, i.e. prefixed by "no". E.g. "foo!" will allow --foo (with value 1) and -nofoo (with value 0). The option variable will be set to 1, or 0 if negated.
                                 "threads:i"=>\$threads,                              # Number of threads to use, default: 8 [: means that this parameter is optional]
-                                "pangenome_alg:s"=>\$PanGenomeAlg,                   # Angorithm to use in the PanGenome construction step, {PanX|DIAMONDClust}, default: PanX
+                                "pangenome_alg:s"=>\$PanGenomeAlg,                   # Algorithm to use in the PanGenome construction step, {PanX|DIAMONDClust}, default: PanX
                                 "skip_all_vs_all!"=>\$skip_all_vs_all,               # flag to skip all-vs-all calculations [Option does not take an argument and may be negated, i.e. prefixed by "no". E.g. "foo!" will allow --foo (with value 1) and -nofoo (with value 0). The option variable will be set to 1, or 0 if negated.]
                                 "prefix_name:s"=>\$Prefix_Name,                      # Prefix to add to the output files, default=""
                                 "GCS_method:s"=>\$GCS_method,                        # metric to use in the GeneContRep step {GCSj|GCSJo}, default: GCSJ
-                                "CGS_clustering_cutoff:s"=>\$clustering_cutoff,      # cutoff for the GCS clustering for GeneContRep step [0-1], default: 0.9
-                                "diamond_pid:i"=>\$diamond_pid,                      # percent identity to clusrer sequence in DIAMONDClust, default: 80
+                                "GCS_clustering_cutoff:s"=>\$clustering_cutoff,      # cutoff for the GCS clustering for GeneContRep step [0-1], default: 0.9
+                                "diamond_pid:i"=>\$diamond_pid,                      # percent identity to cluster sequence in DIAMONDClust, default: 80
                                 "diamnod_cover:i"=>\$diamnod_cover,                  # mutual-coverage cutoff to be used in DIAMONDClust, default: 70
-                                "reuse_PanGenome!"=>\$reuse_PanGenome,               # if provided will slip the PanGenome construction step, otherwise the relevant PanGenome directories and files are DELETED
-                                "in_metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first coulmn equals to the genome id
+                                "reuse_PanGenome!"=>\$reuse_PanGenome,               # if provided will skip the PanGenome construction step, otherwise the relevant PanGenome directories and files are DELETED
+                                "in_metadata_file:s"=>\$in_metadata_file,            # tab delimited file with metadata and descriptions for the analyzed genomes> default=\"\". Assumes the first column equals to the genome id
                                 "help!"=>\$print_help        
 );
 if ($print_help==1) {print $help_usage; exit(0);}
@@ -115,6 +118,11 @@ if (!defined $reuse_PanGenome) {$reuse_PanGenome="NO"} elsif ($reuse_PanGenome==
 
 # output structure
 if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
+my $user_out_dir=$out_dir_base;
+# resolve relative path
+my ($out_dir_base,$out_path_exists)=resolve_path($user_out_dir);
+if ($out_dir_base!~/\/$/){$out_dir_base=$out_dir_base."/";}
+
 
 my $PanX_out_dir=$out_dir_base."PanX/out/";
 my $PanX_input_gbk_dir=$PanX_out_dir."input_GenBank/";
@@ -143,9 +151,10 @@ open (my $LOG,">",$log_file) || die "Can't open LOG file '$log_file' $!";
 print $LOG "============ PanGene-O-Meter ============\n";
 my $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
 print $LOG "$datestring [INFO] user_cmd: $0 @orig_ARGV\n";
-print $LOG "$datestring [INFO] interpreted_cmd: $0 --in_gbk_list_file $in_gbk_list --outDir $out_dir_base --ignore_private_genes $ignore_private_genes --threads $threads --pangenome_alg $PanGenomeAlg --skip_all_vs_all $skip_all_vs_all --prefix_name $Prefix_Name --GCS_method $GCS_method --CGS_clustering_cutoff $clustering_cutoff --diamond_pid $diamond_pid --diamnod_cover $diamnod_cover --reuse_PanGenome $reuse_PanGenome --in_metadata_file $in_metadata_file\n";
+print $LOG "$datestring [INFO] interpreted_cmd: $0 --in_gbk_list_file $in_gbk_list --outDir $user_out_dir --ignore_private_genes $ignore_private_genes --threads $threads --pangenome_alg $PanGenomeAlg --skip_all_vs_all $skip_all_vs_all --prefix_name $Prefix_Name --GCS_method $GCS_method --GCS_clustering_cutoff $clustering_cutoff --diamond_pid $diamond_pid --diamnod_cover $diamnod_cover --reuse_PanGenome $reuse_PanGenome --in_metadata_file $in_metadata_file\n";
 if (!defined $in_metadata_file or $in_metadata_file eq "" or !-e $in_metadata_file or -s $in_metadata_file==0) {print  $LOG "$datestring [INFO] Metadata file was not provided or is empty. PanGene-O-Meter Will use the data extracted from the gbk files\n";$in_metadata_file="NA";}
 
+if ($user_out_dir ne $out_dir_base) {print $LOG "$datestring [INFO] user provided path '$user_out_dir' was resolved to the following full path '$out_dir_base'\n";}
 
 
 # 1. create an output dir for PanX and run it
@@ -232,11 +241,16 @@ print $LOG "$datestring [INFO] before filtering we have ",scalar(@list_of_gbk),"
 my ($good_list_ArrRef,$errors_ArrRef)=filter_gbk_without_cds(\@list_of_gbk);
 # my ($good_list_ArrRef,$errors_ArrRef)=validate_CDS_remove_db_xref_lines(\@list_of_gbk,$tmp_dir);
 $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
-print $LOG "$datestring [INFO] after filtering we have ",scalar(@{$good_list_ArrRef})," gbk files\n";
+if ((scalar @{$errors_ArrRef})==0) # nothing was filtered
+{
+    print $LOG "$datestring [INFO] PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files provided by the user\n";
+}
 if ((scalar @{$errors_ArrRef})>0)
 {
+    print "$datestring [INFO] After filtering out erroneous gbk files, PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files\n";
     print "\n==== ERRORS in GBKs: =======\n";
     print join("\n",@{$errors_ArrRef}),"\n";
+    print $LOG "$datestring [INFO] After filtering out erroneous gbk files, PanGene-O-Meter will analyze ",scalar(@{$good_list_ArrRef})," gbk files\n";
     print $LOG "\n==== ERRORS in GBKs: =======\n";
     print $LOG join("\n",@{$errors_ArrRef}),"\n";
 }
@@ -775,7 +789,7 @@ sub build_phyletic_pattern_based_on_DIAMONDclusters {
     open (my $OUT_MATRIX_01,">",$Out_PhyleticPattern_Matrix_01) or exit_on_error ("[ERROR] build_phyletic_pattern_based_on_DIAMONDclusters: Could not open OUT_MATRIX_01 '$Out_PhyleticPattern_Matrix_01' $!");
     print $OUT_MATRIX_01 "Species,",join(",",@clusters_names_new),"\n";
 
-    my $Out_PhyleticPattern_FASTA=$Out_PhyleticPattern_prefix.".fas";
+    my $Out_PhyleticPattern_FASTA=$Out_PhyleticPattern_prefix.".01.fas";
     open (my $OUT_FASTA,">",$Out_PhyleticPattern_FASTA) || exit_on_error ("[ERROR] build_phyletic_pattern_based_on_DIAMONDclusters: Could not open OUT_FASTA '$Out_PhyleticPattern_FASTA' $!");
     foreach my $species (sort keys %phyletic_pattern)
     {
@@ -834,7 +848,7 @@ sub build_phyletic_pattern_based_on_DIAMONDclusters {
     close ($OUT_NAMES_AND_PREVALENCE);
 
     print "[INFO] Out_PhyleticPattern_Clusters_Names_Pos was created: '$Out_PhyleticPattern_Clusters_Names_Pos'\n";
-    print "[INFO] Out_PhyleticPattern_FASTA was created: '$Out_PhyleticPattern_FASTA'\n";
+    print "[INFO] Out_PhyleticPattern_FASTA_01 was created: '$Out_PhyleticPattern_FASTA'\n";
     print "[INFO] Out_PhyleticPattern_Matrix_01 was created: '$Out_PhyleticPattern_Matrix_01'\n";
     print "[INFO] Out_PhyleticPattern_Matrix was created: '$Out_PhyleticPattern_Matrix'\n";
     print "[INFO] Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies was created: '$Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies'\n";
@@ -969,7 +983,7 @@ sub Builed_PhyleticPattern_from_PanX_aa_aln_list {
     open (my $OUT_MATRIX_01,">",$Out_PhyleticPattern_Matrix_01) or exit_on_error ("[ERROR] Builed_PhyleticPattern_from_PanX_aa_aln_list: Could not open OUT_MATRIX_01 '$Out_PhyleticPattern_Matrix_01' $!");
     print $OUT_MATRIX_01 "Species,",join(",",@clusters_names),"\n";
 
-    my $Out_PhyleticPattern_FASTA=$Out_PhyleticPattern_prefix.".fas";
+    my $Out_PhyleticPattern_FASTA=$Out_PhyleticPattern_prefix.".01.fas"; # FASTA phyletic patternis always 01 otherwise position with more than 10 will distrupt the 'alignemnt'
     open (my $OUT_FASTA,">",$Out_PhyleticPattern_FASTA) || exit_on_error ("[ERROR] Builed_PhyleticPattern_from_PanX_aa_aln_list: Could not open OUT_FASTA '$Out_PhyleticPattern_FASTA' $!");
     foreach my $species (sort keys %phyletic_pattern)
     {
@@ -1027,7 +1041,7 @@ sub Builed_PhyleticPattern_from_PanX_aa_aln_list {
     }
     close ($OUT_NAMES_AND_PREVALENCE);
     print "[INFO] Out_PhyleticPattern_Clusters_Names_Pos was created: '$Out_PhyleticPattern_Clusters_Names_Pos'\n";
-    print "[INFO] Out_PhyleticPattern_FASTA was created: '$Out_PhyleticPattern_FASTA'\n";
+    print "[INFO] Out_PhyleticPattern_FASTA_01 was created: '$Out_PhyleticPattern_FASTA'\n";
     print "[INFO] Out_PhyleticPattern_Matrix_01 was created: '$Out_PhyleticPattern_Matrix_01'\n";
     print "[INFO] Out_PhyleticPattern_Matrix was created: '$Out_PhyleticPattern_Matrix'\n";
     print "[INFO] Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies was created: '$Out_PhyleticPattern_Clusters_Names_and_NumOfSpecies'\n";
@@ -1945,4 +1959,30 @@ sub exit_on_error {
     close $LOG;
     print "$datestring $error_string\n";
     exit (1);
+}
+
+sub resolve_path {
+    my $user_path=shift;
+    my $resolved_path=$user_path;
+    
+    my $path_exists="NA";
+    if($user_path =~ /^~/) {
+        # my $home = File::HomeDir->my_home;
+        # $resolved_path =~ s/^~/$home/;
+        $resolved_path=File::Glob::bsd_glob($user_path);
+
+    }   
+
+    if($user_path !~ m!^/!) {
+        $resolved_path = getcwd . "/$user_path";
+    }
+
+    $resolved_path = abs_path($resolved_path);
+
+    if(defined $resolved_path && -d $resolved_path) {
+        $path_exists="YES";
+    } else {
+        $path_exists="NO";
+    }
+    return ($resolved_path,$path_exists);
 }

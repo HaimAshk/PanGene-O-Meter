@@ -513,6 +513,12 @@ if ($PanGenomeAlg eq "PANX")
 # convert to Phylletic pattern
 # perl /ebio/abt6_projects7/small_projects/hashkenazy/Pseudomonas/Scripts/build_phyletic_pattern_based_on_DIAMONDclusters.pl /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.reclust.tsv /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.reclust.PhyleticPattern "\|" 1
 
+    # compress the combined protein file (can be very large); DIAMOND (cluster and recluster) has finished with it
+    if (-s $single_faa_file_for_DIAMOND) {
+        my $gz_rc=system("gzip","-n","-f",$single_faa_file_for_DIAMOND);
+        if ($gz_rc==0) {print "[INFO] '$single_faa_file_for_DIAMOND' was compressed to '$single_faa_file_for_DIAMOND.gz'\n";}
+        else {print "[WARN] could not compress '$single_faa_file_for_DIAMOND' (gzip failed), it was left as it is\n";}
+    }
     # Do phylettic pattern
     my ($ans,$pa_files_ref);
     if ($pa_engine eq "FAST") {
@@ -523,6 +529,14 @@ if ($PanGenomeAlg eq "PANX")
         ($ans)=build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix,"\\|",1);
     }
     if ($ans ne "OK") {exit_on_error ("[ERROR] 'build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix, \"\|\",\"1\")' --> FAILED\n");}
+
+    # the phyletic pattern is built: compress the (large) DIAMOND cluster tables
+    foreach my $big_diamond_file ($diamond_clusters_results_file,$diamond_REclusters_results_file) {
+        if (-s $big_diamond_file) {
+            if (system("gzip","-n","-f",$big_diamond_file)==0) {print "[INFO] '$big_diamond_file' was compressed to '$big_diamond_file.gz'\n";}
+            else {print "[WARN] could not compress '$big_diamond_file' (gzip failed), it was left as it is\n";}
+        }
+    }
 
 } elsif ($PanGenomeAlg eq "MATRIX")
 {

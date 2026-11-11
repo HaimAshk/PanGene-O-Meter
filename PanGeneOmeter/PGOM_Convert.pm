@@ -258,6 +258,36 @@ sub concat_files {              # streaming copy (no slurping)
     return $out_file;
 }
 
+sub _extract_parallel {
+    my ($files, $faa_dir, $threads, $process) = @_;
+    require Storable; require POSIX;
+    my $W = $threads < @$files ? $threads : scalar(@$files);
+    my (@pids, @tmp, %pre);
+    my $fork_failed = 0;
+    for my $w (0 .. $W - 1) {
+        my $tf = "$faa_dir/.extract_worker_$w.sto";
+        push @tmp, $tf;
+        my $pid = fork();
+        if (!defined $pid) { $fork_failed = 1; last; }
+        if ($pid == 0) {
+            my %mine;
+            for (my $i = $w; $i < @$files; $i += $W) {
+                my $r = eval { [ $process->($files->[$i], 'S' . ($i + 1), 1) ] };
+                $mine{$i} = $r if $r;
+            }
+            my $stored = eval { Storable::nstore(\%mine, $tf); 1 };
+            POSIX::_exit($stored ? 0 : 1);
+        }
+        push @pids, $pid;
+    }
+    waitpid($_, 0) for @pids;
+    for my $tf (@tmp) {
+        if (!$fork_failed and -s $tf) { my $h = eval { Storable::retrieve($tf) }; %pre = (%pre, %$h) if $h; }
+        unlink $tf;
+    }
+    return $fork_failed ? () : %pre;
+}
+
 # ---- whole front end ---------------------------------------------------------
 # prepare_genomes(\@files, $outdir, threads=>, map_file=>, combined_faa=>, stats_file=>)
 #   * each file is one genome: gbk/gbff/gb(.gz) or fna/fasta/fa(.gz); types may be mixed
@@ -283,9 +313,9 @@ sub prepare_genomes {
     }
 
     my (@kept, @dropped, @warnings, %length, %nprot, @faa_files, @stats, %inputs);
-    my $n = 0;
-    for my $f (@$files) {
-        my $s = 'S' . ($n + 1);
+    # extraction of ONE genome; the same code is used by the serial and by the parallel path
+    my $process = sub {
+        my ($f, $s, $pyro_threads) = @_;
         my $type = genome_type($f);
         my ($ok, $reason, $res) = (0, '');
         if (!-f $f) { $reason = "file not found"; }
@@ -298,7 +328,7 @@ sub prepare_genomes {
                     $res->{n_proteins} = $res->{n_written};
                     $res->{source} = 'gbk';
                 } else {
-                    my $r = run_pyrodigal($f, $s, $faa_dir, threads => $threads);
+                    my $r = run_pyrodigal($f, $s, $faa_dir, threads => $pyro_threads);
                     $res = { length => $r->{total_bp}, n_proteins => $r->{n_genes}, faa => $r->{faa}, gff => $r->{gff},
                              source => "pyrodigal-$r->{mode}", warnings => [ $r->{warning} ? ($r->{warning}) : () ] };
                 }
@@ -312,6 +342,21 @@ sub prepare_genomes {
                 } else { $ok = 1; }
             }
         }
+        return ($ok, $reason, $res, $type);
+    };
+    # many genomes and several threads: extract the genomes in parallel (fork, round-robin). The genomes are numbered S1..SN in
+    # input order, so this is only used if EVERY genome worked (no gaps); otherwise everything is redone serially (old behaviour).
+    my %pre;
+    if ($threads > 1 and @$files >= 8) {
+        %pre = _extract_parallel($files, $faa_dir, $threads, $process);
+        my @bad = grep { !$pre{$_} or !$pre{$_}[0] } (0 .. $#$files);
+        if (@bad) { %pre = (); unlink(glob("$faa_dir/*.faa"), glob("$faa_dir/*.gff")); }
+    }
+    my $n = 0;
+    for my $idx (0 .. $#$files) {
+        my $f = $files->[$idx];
+        my $s = 'S' . ($n + 1);
+        my ($ok, $reason, $res, $type) = $pre{$idx} ? @{$pre{$idx}} : $process->($f, $s, $threads);
         if (!$ok) {
             push @dropped, [$f, $reason];
             next;

@@ -147,7 +147,7 @@ Output files are written to `--outDir`. The names start with `DIAMOND_DeepClust.
 #### Other files
 * **genome_names.map.txt**: The mapping between the original genome files and names and the internal names `S1 ... SN`.
 * **genome_stats.tsv**: For each genome (original name; `internal_id` gives the S1..SN name used inside intermediate files), the source of the proteins (GenBank or pyrodigal), the genome length and the number of proteins (matrix input: the number of present genes). The clustering log (`*.log.txt`) also lists the original names.
-* **All_proteins.faa**, **protein_faa/**, **All_proteins.diamond_cluster...tsv**: Intermediate files of the DIAMOND step (proteins are named `S<n>|locus`).
+* **All_proteins.faa.gz**, **protein_faa/**, **All_proteins.diamond_cluster...tsv.gz**: Intermediate files of the DIAMOND step (proteins are named `S<n>|locus`). The large files are gzip-compressed once they are no longer needed (`gunzip` or `zcat` to read them).
 
 ## Optional: PanX
 PanX is not needed for the default analysis. `--pangenome_alg PanX` (and `--protein_extractor panx`) use the [PanX](https://github.com/neherlab/pan-genome-analysis/) pan-genome pipeline, which needs Python 2.7 and its old dependencies. Install it in **its own** conda environment, not in the `pangeneometer` one:
@@ -178,6 +178,8 @@ PanX dependencies: [PanX](https://github.com/neherlab/pan-genome-analysis/), [DI
 ## Versions
 | Tag / branch | Description |
 |---|---|
+| `v1.3.0` | fast bit-vector all-vs-all and phyletic pattern (`--pa_engine`), parallel protein extraction, working `--ignore_private_genes` (it had no effect before), deterministic output order (clusters from the biggest to the smallest, members alphabetical), large DIAMOND files are gzip-compressed, Panaroo protocol |
+| `v1.2.1` | original genome names restored in all result tables, the statistics file and the clustering log |
 | `v1.2.0` | DIAMOND DeepClust is the default (no PanX needed); GenBank proteins are extracted by PanGene-O-Meter; genome FASTA input (pyrodigal) and presence/absence matrices as input |
 | `v1.1.0` | merge of two working copies with start-up fixes; PanX was the default |
 | `v1.0.0` | the original release |

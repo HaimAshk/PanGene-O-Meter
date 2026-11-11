@@ -38,7 +38,8 @@ my $DIAMOND_CLUST_PATH="diamond";
 # * see if this helps should be added somewhere: \t--all_proteins_faa <single FASTA file with all proteins in format: '>TAX|ProtID'. IMPORTANT: will supress protein extraction from gbk files [--in_gbk_list_file is ignored]> 
 #.  this --all_proteins_faa is not in use. the mechanism was replaced by --input_type==single_faa
 
-my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank format> --outDir <full path output direcory>
+our $PGOM_VERSION="1.3.0"; # keep equal to the git tag
+my $help_usage="PanGene-O-Meter v$PGOM_VERSION\nUSAGE: perl $0 --in_gbk_list_file <file with list of genomes, each in genebank format> --outDir <full path output direcory>
  \tOptional parameters:
  \t--input_type <gbff|fna|faa|single_faa> default=gbff [fna: genome FASTA files, genes are predicted with pyrodigal]
  \t--phyletic_pattern_file <presence/absence matrix: Microbializer .fas, Panaroo/Roary .Rtab or .csv> --> skips protein extraction and clustering; --in_gbk_list_file is not needed
@@ -61,6 +62,7 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
 
 ### TO ADD: use calculated PanGenome flag --> otherwise should delete the PanX directory before starting a new one
 
+if (grep {$_ eq "--version" or $_ eq "-version"} @ARGV) {print "PanGene-O-Meter v$PGOM_VERSION\n"; exit(0);}
 if (@ARGV<4) {die $help_usage;}
 my $pa_engine;
 my @orig_ARGV = @ARGV;
@@ -209,7 +211,7 @@ my @all_output_files=(); # will be populated during the run
 
 if (! -d $out_dir_base) {make_path($out_dir_base) || die "Can't create the output directory '$out_dir_base' $!";}
 open (my $LOG,">",$log_file) || die "Can't open LOG file '$log_file' $!";
-print $LOG "============ PanGene-O-Meter ============\n";
+print $LOG "============ PanGene-O-Meter v$PGOM_VERSION ============\n";
 my $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
 print $LOG "$datestring [INFO] user_cmd: $0 @orig_ARGV\n";
 print $LOG "$datestring [INFO] interpreted_cmd: $0 --in_gbk_list_file ".(defined $in_gbk_list ? $in_gbk_list : "NA")." --phyletic_pattern_file ".(defined $phyletic_pattern_file ? $phyletic_pattern_file : "NA")." --input_type $input_type --protein_extractor $protein_extractor --outDir $user_out_dir --ignore_private_genes $ignore_private_genes --threads $threads --pangenome_alg $PanGenomeAlg --skip_all_vs_all $skip_all_vs_all --prefix_name $Prefix_Name --GCS_method $GCS_method --GCS_clustering_cutoff $clustering_cutoff --diamond_pid $diamond_pid --diamnod_cover $diamnod_cover --reuse_PanGenome $reuse_PanGenome --in_metadata_file $in_metadata_file\n";
@@ -482,6 +484,7 @@ if ($PanGenomeAlg eq "PANX")
     } # else we already have this file generated before by: convert_names_single_faa
 
     # cluster by DIAMOND
+    {my $dv=`$DIAMOND_CLUST_PATH version 2>&1 | head -1`; chomp($dv); my $ds=strftime "%a %b %e %H:%M:%S %Y", localtime; print $LOG "$ds [INFO] DIAMOND version: $dv\n";}
     my $diamond_clusters_results_file="";
     if (defined $Prefix_Name and $Prefix_Name ne "") {$diamond_clusters_results_file=$out_dir_base.$Prefix_Name.".All_proteins.diamond_cluster.mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".tsv";}
     else {$diamond_clusters_results_file=$out_dir_base."All_proteins.diamond_cluster.mutual_cover_".$diamnod_cover.".id_".$diamond_pid.".tsv";}

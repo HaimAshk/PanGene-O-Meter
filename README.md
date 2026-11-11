@@ -111,6 +111,7 @@ Whatever the input, genomes are renamed to `S1 ... SN` (in list order) for the a
 * `--ignore_private_genes`: Ignore private genes (present in a single genome) in the GCS scores. Default: private genes are used. The excluded groups are listed in `*.filtered_pos_below_1.txt`.
 * `--skip_all_vs_all`: Skip the calculation of all pairwise GCS distances (the distances needed for clustering are calculated anyway).
 * `--pa_engine <fast|legacy>`: Implementation of the phyletic-pattern and all-vs-all steps. `fast` (default) uses packed bit vectors and `--threads`; `legacy` is the previous implementation. Both give the same results (see the QC in the repository);
+* `--version`: Print the version of PanGene-O-Meter and exit. The version is also written in the header of the run log (together with the DIAMOND version).
 * `--threads <Number>`: Set the number of threads to use for parallel processing. The default is `8`.
 * `--help`: Display help information and exit the program.
 

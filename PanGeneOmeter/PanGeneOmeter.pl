@@ -19,6 +19,7 @@ use PGOM_Names   qw(assign_short_names write_name_map);
 use PGOM_Convert qw(prepare_genomes);
 use PGOM_Input   qw(rename_pattern pa_genome_sizes);
 use PGOM_Matrix  qw(read_matrix_any write_canonical_matrix);
+use PGOM_Fast    qw(build_pa_fast all_pairs_fast);
 
 
 # use IO::Zlib;
@@ -55,12 +56,13 @@ my $help_usage="USAGE: perl $0 --in_gbk_list_file <file with list of genomes, ea
  \t[GeneContRep clustering]
  \t\t--GCS_method <GCSj |GCSJo>, default=GCSJ --> gene-content similarity metric to use in the GeneContRep step
  \t\t--GCS_clustering_cutoff <{0-1}>, default=0.9 --> cutoff for the GCS clustering for GeneContRep step
- \t\t--skip_all_vs_all --> flag to skip all-vs-all calculations distance step
+ \t\t--skip_all_vs_all --> flag to skip all-vs-all calculations distance step\n \t\t--pa_engine <fast | legacy> default=fast --> implementation of the phyletic-pattern and all-vs-all steps (identical results; fast uses bit vectors and --threads)
  \n";
 
 ### TO ADD: use calculated PanGenome flag --> otherwise should delete the PanX directory before starting a new one
 
 if (@ARGV<4) {die $help_usage;}
+my $pa_engine;
 my @orig_ARGV = @ARGV;
 # print "[QA INFO] perl $0 @ARGV\n";
 my ($in_gbk_list,$out_dir_base,$input_type,$ignore_private_genes,$threads,$PanGenomeAlg,$skip_all_vs_all,$Prefix_Name,$GCS_method,$clustering_cutoff,$diamond_pid,$diamnod_cover,$reuse_PanGenome,$print_help,$in_metadata_file);
@@ -100,6 +102,7 @@ my $getoptResult = GetOptions ( "in_gbk_list_file|in_genome_list_file=s"=>\$in_g
                                 "phyletic_pattern_file:s"=>\$phyletic_pattern_file,  # presence/absence matrix as input (skips protein extraction and clustering)
                                 "pattern_format:s"=>\$pattern_format,                # auto|rtab|roary|fasta|csv
                                 "protein_extractor:s"=>\$protein_extractor,          # builtin|panx (GenBank -> proteins for DIAMONDClust)
+                                "pa_engine:s"=>\$pa_engine,                      # fast|legacy: implementation of the phyletic-pattern and all-vs-all steps (same results)
                                 "help!"=>\$print_help        
 );
 if ($print_help==1) {print $help_usage; exit(0);}
@@ -125,10 +128,13 @@ my $PanXExtra_params=""; ### ToDO: support from the cmdline
 if (!defined $PanGenomeAlg) {$PanGenomeAlg="DIAMONDCLUST"} else {$PanGenomeAlg=uc($PanGenomeAlg);}
 if (!defined $input_type) {$input_type="gbff"} else {$input_type=uc($input_type);}
 if (!defined $threads) {$threads=8;}
+if (!defined $pa_engine) {$pa_engine="FAST";} else {$pa_engine=uc($pa_engine);}
+if ($pa_engine ne "FAST" and $pa_engine ne "LEGACY") {die "[FATAL ERROR] --pa_engine must be fast or legacy\n";}
 if (defined $skip_all_vs_all) {if ($skip_all_vs_all==0) {$skip_all_vs_all="NO";} else {$skip_all_vs_all="YES";}} # to correctly handle params
 if (!defined $skip_all_vs_all) {$skip_all_vs_all="NO";} else {$skip_all_vs_all=uc($skip_all_vs_all);}
 if (!defined $Prefix_Name) {$Prefix_Name="";}
-if (!defined $ignore_private_genes) {$ignore_private_genes="N";} else {$ignore_private_genes=uc($ignore_private_genes);}
+if (!defined $ignore_private_genes) {$ignore_private_genes="N";} else {$ignore_private_genes=(uc($ignore_private_genes)=~/^(1|Y|YES|TRUE)$/) ? "Y" : "N";}   # the flag is 0/1: the filter was never applied because the code tested for "Y"
+if ($ignore_private_genes eq "Y" and $skip_all_vs_all eq "YES") {print "[WARN] --ignore_private_genes is applied in the all-vs-all step only; with --skip_all_vs_all the clustering uses all genes\n";}
 if (!defined $GCS_method) {$GCS_method="GCSj"} elsif (uc ($GCS_method) eq "GCSJ") {$GCS_method="GCSj";} elsif (uc($GCS_method) eq "GCSO") {$GCS_method="GCSo";} else {print "[UNKNOWN OPTION] --GCS_method can be only GCSj or GCSo, unknown option provided: '$GCS_method' --> exit\n";exit (1);}
 if (!defined $clustering_cutoff) {$clustering_cutoff=0.9;}
 if (!defined $diamond_pid) {$diamond_pid=80;}
@@ -508,7 +514,14 @@ if ($PanGenomeAlg eq "PANX")
 # perl /ebio/abt6_projects7/small_projects/hashkenazy/Pseudomonas/Scripts/build_phyletic_pattern_based_on_DIAMONDclusters.pl /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.reclust.tsv /ebio/scratch/hashkenazy/H_pylori/DIAMOND_Clust/Analyzed200/H_pylori.Analyzed200.protein_faa.diamond_cluster.mutual_cover_80.id_90.reclust.PhyleticPattern "\|" 1
 
     # Do phylettic pattern
-    my ($ans)=build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix,"\\|",1);
+    my ($ans,$pa_files_ref);
+    if ($pa_engine eq "FAST") {
+        ($ans,$pa_files_ref)=build_pa_fast($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix,"\\|",1);
+        if ($ans ne "OK") {exit_on_error ($ans);}
+        push (@all_output_files,@{$pa_files_ref});
+    } else {
+        ($ans)=build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix,"\\|",1);
+    }
     if ($ans ne "OK") {exit_on_error ("[ERROR] 'build_phyletic_pattern_based_on_DIAMONDclusters($diamond_REclusters_results_file,$Out_PhyleticPattern_prefix, \"\|\",\"1\")' --> FAILED\n");}
 
 } elsif ($PanGenomeAlg eq "MATRIX")
@@ -526,7 +539,14 @@ if ($skip_all_vs_all ne "YES")
     if (defined $Prefix_Name and $Prefix_Name ne "") {$Out_all_vs_all_J_overlap_distance_file=$out_dir_base.$Prefix_Name.".".$PanGenomeAlg_for_file_names.".All_vs_All.All_vs_All_GCSj_GCSo_distance";} 
     else {$Out_all_vs_all_J_overlap_distance_file=$out_dir_base.$PanGenomeAlg_for_file_names.".All_vs_All.All_vs_All_GCSj_GCSo_distance";}
 
-    my ($ans1,$GCSj_distances_HashRef,$GCSo_distances_HashRef)=calc_jaccard_and_overlap_all_pairs ($PhyleticPattern_Matrix_01_file,$Out_all_vs_all_J_overlap_distance_file,$ignore_private_genes,",",$print_OG_diff); 
+    my ($ans1,$GCSj_distances_HashRef,$GCSo_distances_HashRef,$fast_pairs_file);
+    if ($pa_engine eq "FAST" and $print_OG_diff ne "Y") {
+        ($ans1,$GCSj_distances_HashRef,$GCSo_distances_HashRef,$fast_pairs_file)=all_pairs_fast($PhyleticPattern_Matrix_01_file,$Out_all_vs_all_J_overlap_distance_file,",",$threads,$ignore_private_genes);
+        if ($ans1 ne "OK") {exit_on_error ($ans1);}
+        push (@all_output_files,$fast_pairs_file);
+    } else {
+        ($ans1,$GCSj_distances_HashRef,$GCSo_distances_HashRef)=calc_jaccard_and_overlap_all_pairs ($PhyleticPattern_Matrix_01_file,$Out_all_vs_all_J_overlap_distance_file,$ignore_private_genes,",",$print_OG_diff);
+    } 
     if ($ans1 ne "OK") {exit_on_error ("[ERROR] 'calc_jaccard_and_overlap_all_pairs ($PhyleticPattern_Matrix_01_file,$Out_all_vs_all_J_overlap_distance_file,$ignore_private_genes,\",\",$print_OG_diff);'  --> FAILED\n");}
     # keep the distances for the clustering step
     if ($GCS_method eq "GCSj" and $skip_all_vs_all ne "YES") {%distances=%{$GCSj_distances_HashRef};}
@@ -1648,7 +1668,7 @@ sub cluster_cd_hit_like {
     # print $LOG1 "# running command: perl $0 @ARGV\n\n";
     print $LOG1 "# running cluster_cd_hit_like: $phyletic_pattern_csv_file $clustering_cutoff $out_prefix genomes_length_HashRef distances_HashRef $GCS_method\n\n";
     #my @sorted_list_of_genomes=sort by_total_genome_length_fasta_rev (@genomes_files);
-    my @sorted_list_of_genomes=sort {$genomes_length{$b}<=>$genomes_length{$a}} (keys %genomes_length);
+    my @sorted_list_of_genomes=sort {$genomes_length{$b}<=>$genomes_length{$a} or $a cmp $b} (keys %genomes_length);
     # print join("\n",@sorted_list_of_genomes),"\n"; # QA
     print $LOG1 "Sorted list of genomes by their nt length\n====================================================================================\n",join("\n",@sorted_list_of_genomes),"\n";
     print $LOG1 "\n";
@@ -1667,6 +1687,7 @@ sub cluster_cd_hit_like {
 
     my %Clusters=();
     my $cluster_number=0;
+    my %ClusterBuf=(); # rows of the .clstr.txt file per cluster, written at the end in the final cluster order
     open (my $FASTA_REP,">",$rep_fasta_file) || exit_on_error ("[ERROR] cluster_cd_hit_like: Can't open FASTA_REP '$rep_fasta_file' $!");
     open (my $CLUSTERS,">",$clusters_file) || exit_on_error ("[ERROR] cluster_cd_hit_like: Can't open CLUSTERS '$clusters_file' $!");
     open (my $CSV_REP,">",$rep_CSV_file) || exit_on_error ("[ERROR] cluster_cd_hit_like: Can't open CSV '$rep_CSV_file' $!");
@@ -1728,11 +1749,7 @@ sub cluster_cd_hit_like {
         # print "== CLUSTER $cluster_number: $short_name\n";
         print $LOG1 "== CLUSTER $cluster_number: $short_name\n";
         
-        print $CLUSTERS ">Cluster $cluster_number\n";
-        print $CLUSTERS "$cluster_size\t$genomes_length{$cluster_head}\t$short_name\t*\n";
-        print $FASTA_REP ">$short_name\n",join("",@{$PhyleticPattern{$short_name}}),"\n";
-        print $CSV_REP "$short_name,",join(",",@{$PhyleticPattern{$short_name}}),"\n";
-        print $REP_NAMES "$short_name\n";
+        $ClusterBuf{$short_name}={head=>"$cluster_size\t$genomes_length{$cluster_head}\t$short_name\t*\n",lines=>[]};
         # print "TO CLUSTER: ",count_real_elements_in_array (\@sorted_list_of_genomes) ." or $genomes_left_for_clustering\n"; # QA
         for (my $candidate_index=0;$candidate_index<scalar (@sorted_list_of_genomes);$candidate_index++)
         {
@@ -1805,7 +1822,7 @@ sub cluster_cd_hit_like {
                     # print "- Adding $candidate ($distance)\n";
                     print $LOG1 "- Adding $candidate ($distance)\n";
                     $genomes_left_for_clustering--;
-                    print $CLUSTERS "$cluster_size\t$genomes_length{$candidate_full_name}\t$candidate\tat $distance%\n";
+                    push (@{$ClusterBuf{$short_name}{lines}},"$cluster_size\t$genomes_length{$candidate_full_name}\t$candidate\tat $distance%\n");
                     delete ($sorted_list_of_genomes[$candidate_index]);
                     if (defined $Clusters{$short_name})
                     {
@@ -1835,14 +1852,20 @@ sub cluster_cd_hit_like {
     print $FINAL_CLUSTERS_TSV "rep\tcluster_size\tmembers\n";
     print $FINAL_CLUSTERS_ANNOTATION "name\tcluster_id\trep\n";
     my $cluster_id=0;
-    foreach my $cluster (sort {scalar @{$Clusters{$b}}<=> scalar @{$Clusters{$a}}} keys %Clusters)
+    foreach my $cluster (sort {scalar @{$Clusters{$b}}<=> scalar @{$Clusters{$a}} or $a cmp $b} keys %Clusters)
     {
         $cluster_id++;
-        # print "$cluster\t",scalar @{$Clusters{$cluster}},"\t",join(";",@{$Clusters{$cluster}}),"\n";
-        print $LOG1 "$cluster\t",scalar @{$Clusters{$cluster}},"\t",join(";",@{$Clusters{$cluster}}),"\n";
+        my @sorted_members=sort @{$Clusters{$cluster}};
+        print $CLUSTERS ">Cluster $cluster_id\n";
+        print $CLUSTERS $ClusterBuf{$cluster}{head};
+        print $CLUSTERS @{$ClusterBuf{$cluster}{lines}};
+        print $FASTA_REP ">$cluster\n",join("",@{$PhyleticPattern{$cluster}}),"\n";
+        print $CSV_REP "$cluster,",join(",",@{$PhyleticPattern{$cluster}}),"\n";
+        print $REP_NAMES "$cluster\n";
+        print $LOG1 "$cluster\t",scalar @{$Clusters{$cluster}},"\t",join(";",@sorted_members),"\n";
         print $FINAL_CLUSTERS_TSV "$cluster\t",scalar @{$Clusters{$cluster}}+1,"\t",join(";",sort(($cluster,@{$Clusters{$cluster}}))),"\n";
         print $FINAL_CLUSTERS_ANNOTATION "$cluster\t$cluster_id\t1\n";
-        foreach my $member (@{$Clusters{$cluster}})
+        foreach my $member (@sorted_members)
         {
             print $FINAL_CLUSTERS_ANNOTATION "$member\t$cluster_id\t0\n";
         }

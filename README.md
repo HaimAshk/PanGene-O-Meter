@@ -63,7 +63,7 @@ Notes:
 * Please use the DIAMOND version of the environment. DIAMOND v2.1.24 crashes in the `recluster` step and v2.1.25 has no `recluster` command, so these versions can not be used at the moment; PanGene-O-Meter stops with an error if DIAMOND returns an empty result.
 
 ## How to run
-PanGene-O-Meter needs the presence/absence of orthology groups in every genome. There are three ways to provide it. In all of them, `--outDir` is the output directory and `--threads` sets the number of CPU cores \[default=1\].
+PanGene-O-Meter needs the presence/absence of orthology groups in every genome. There are three ways to provide it. In all of them, `--outDir` is the output directory and `--threads` sets the number of CPU cores \[default=8\].
 
 **1. Annotated genomes in [*GenBank Flat File*](https://www.ncbi.nlm.nih.gov/genbank/samplerecord/) format** (a text file with one genome file per line, `.gz` files are accepted):
 
@@ -108,9 +108,10 @@ Whatever the input, genomes are renamed to `S1 ... SN` (in list order) for the a
 * `--input_type <gbff|fna>`: The format of the genomes in the list file: GenBank (`gbff`, default) or genome sequences in FASTA (`fna`; genes are predicted with pyrodigal). (The values `faa` and `single_faa`, protein FASTA input, are experimental and not described here.)
 * `--prefix_name <Prefix>`: Specify a prefix to be added to the names of the output files. Default is an empty string (""), meaning no prefix will be used.
 * `--metadata_file <File>` (alias `--in_metadata_file`): Provide the path to a tab-delimited file containing metadata and descriptions for the genomes being analyzed; the first column is the genome name. Default is an empty string (""). If not provided, a table with the genome source, length and number of proteins is used (with `--pangenome_alg PanX` the metadata extracted by PanX from the GenBank files is used).
-* `--ignore_private_genes`: Ignore private genes (present in a single genome) in the GCS scores. Default: private genes are used.
+* `--ignore_private_genes`: Ignore private genes (present in a single genome) in the GCS scores. Default: private genes are used. The excluded groups are listed in `*.filtered_pos_below_1.txt`.
 * `--skip_all_vs_all`: Skip the calculation of all pairwise GCS distances (the distances needed for clustering are calculated anyway).
-* `--threads <Number>`: Set the number of threads to use for parallel processing. The default is `1`, meaning the program will use a single thread.
+* `--pa_engine <fast|legacy>`: Implementation of the phyletic-pattern and all-vs-all steps. `fast` (default) uses packed bit vectors and `--threads`; `legacy` is the previous implementation. Both give the same results (see the QC in the repository);
+* `--threads <Number>`: Set the number of threads to use for parallel processing. The default is `8`.
 * `--help`: Display help information and exit the program.
 
 #### PanGenome Construction Parameters (not used with `--phyletic_pattern_file`):

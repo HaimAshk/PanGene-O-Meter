@@ -547,7 +547,9 @@ if ($ans ne "OK") {exit_on_error ($ans);}
 my $clusters_annotation_file=""; # will be used later
 my $distance_all_pairs_file="NA";     # if exists will be used later
 foreach my $file (@all_output_files) {
-    if ($file=~/.fas$/) {
+    if ($file=~/PhyleticPattern\.clusters_names_and_(pos|NumOfSpecies)\.txt$/) {
+        restore_protein_genome_prefix($file,\%GenomesNames_New2Old);
+    } elsif ($file=~/.fas$/) {
         update_tax_name($file,\%GenomesNames_New2Old);
     } elsif ($file=~/PhyleticPattern.01.csv$/) {
         update_tax_name($file,\%GenomesNames_New2Old,[(0)],",","T");
@@ -585,6 +587,7 @@ else {
         update_tax_name($out_metadata_file,\%GenomesNames_New2Old,[(0)],"\t","T");
     }
 }
+if ($in_metadata_file eq "NA" and defined $builtin_stats_file and -e $builtin_stats_file and -e $out_metadata_file and !($input_type eq "GBFF" and $use_panx)) {drop_name_column_after_genome($out_metadata_file);}
 # merge metadata file with the clusters annotation
 my ($clusters_annotation_with_metadata_file)=fileparse($clusters_annotation_file,".txt");
 $clusters_annotation_with_metadata_file=$out_dir_base.$clusters_annotation_with_metadata_file.".and_metadata.txt";
@@ -604,6 +607,10 @@ if (($distance_all_pairs_file ne "NA") and (-e $out_metadata_file))
     unlink ($dinstance_all_pairs_file_with_metadata.".tmp");
     push (@all_output_files,$dinstance_all_pairs_file_with_metadata);
 }
+
+# original genome names in the stats file and the clustering logs
+if (defined $builtin_stats_file and -e $builtin_stats_file) {restore_stats_names($builtin_stats_file,\%GenomesNames_New2Old);}
+foreach my $clog (glob("'".$out_dir_base."'*.log.txt")) {restore_names_in_text_file($clog,\%GenomesNames_New2Old);}
 
 # Run finished update about all files created
 $datestring = strftime "%a %b %e %H:%M:%S %Y", localtime;
@@ -2138,6 +2145,80 @@ sub PanX_cleanup
     }
     chdir $cwd;
 #     print "now at: ",getcwd(),"\n";
+}
+sub restore_protein_genome_prefix {
+    # column 2 of the OG name files holds 'S<n>|locus' (DIAMOND); replace S<n> by the original genome name
+    my ($file,$new_to_orig_hashRef)=@_;
+    open (my $IN,"<",$file) || exit_on_error ("[ERROR] restore_protein_genome_prefix: Can't open '$file' for reading: $!");
+    my @content=<$IN>;
+    close ($IN);
+    open (my $OUT,">",$file) || exit_on_error ("[ERROR] restore_protein_genome_prefix: Can't open '$file' for writing: $!");
+    my $header=shift (@content);
+    print $OUT $header;
+    foreach my $line (@content) {
+        my @cols=split(/\t/,$line,-1);
+        if (defined $cols[1] and $cols[1]=~/^(S\d+)\|(.*)$/ and exists $new_to_orig_hashRef->{$1}) {
+            $cols[1]=$new_to_orig_hashRef->{$1}."|".$2;
+        }
+        print $OUT join("\t",@cols);
+    }
+    close ($OUT);
+}
+sub drop_name_column_after_genome {
+    # metadata built from genome_stats.tsv: header 'genome<TAB>name<TAB>...' -> remove the redundant 2nd column
+    my ($file)=@_;
+    open (my $IN,"<",$file) || exit_on_error ("[ERROR] drop_name_column_after_genome: Can't open '$file' for reading: $!");
+    my @content=<$IN>;
+    close ($IN);
+    return if (!@content);
+    my @h=split(/\t/,$content[0],-1);
+    return if (!(defined $h[1] and $h[1] eq "name"));
+    open (my $OUT,">",$file) || exit_on_error ("[ERROR] drop_name_column_after_genome: Can't open '$file' for writing: $!");
+    foreach my $line (@content) {
+        my @c=split(/\t/,$line,-1);
+        splice(@c,1,1);
+        print $OUT join("\t",@c);
+    }
+    close ($OUT);
+}
+sub restore_stats_names {
+    # genome_stats.tsv: S<n> -> original name (col 1), keep S<n> as 'internal_id' (col 2), drop the redundant 'name' column
+    my ($file,$new_to_orig_hashRef)=@_;
+    open (my $IN,"<",$file) || exit_on_error ("[ERROR] restore_stats_names: Can't open '$file' for reading: $!");
+    my @content=<$IN>;
+    close ($IN);
+    return if (!@content);
+    my @h=split(/\t/,$content[0],-1);
+    return if ($h[0] ne "genome" or (defined $h[1] and $h[1] eq "internal_id")); # already done
+    my $has_name=(defined $h[1] and $h[1] eq "name") ? 1 : 0;
+    open (my $OUT,">",$file) || exit_on_error ("[ERROR] restore_stats_names: Can't open '$file' for writing: $!");
+    my $header=shift (@content);
+    my @hc=split(/\t/,$header,-1);
+    splice(@hc,1,1) if ($has_name);
+    splice(@hc,1,0,"internal_id");
+    print $OUT join("\t",@hc);
+    foreach my $line (@content) {
+        my @c=split(/\t/,$line,-1);
+        my $s=$c[0];
+        splice(@c,1,1) if ($has_name);
+        splice(@c,1,0,$s);
+        $c[0]=$new_to_orig_hashRef->{$s} if (exists $new_to_orig_hashRef->{$s});
+        print $OUT join("\t",@c);
+    }
+    close ($OUT);
+}
+sub restore_names_in_text_file {
+    # replace every whole word S<n> by the original genome name (clustering log)
+    my ($file,$new_to_orig_hashRef)=@_;
+    open (my $IN,"<",$file) || return;
+    my @content=<$IN>;
+    close ($IN);
+    open (my $OUT,">",$file) || return;
+    foreach my $line (@content) {
+        $line=~s/(?<![\w.\/\-|])(S\d+)(?![\w.\/\-|])/exists $new_to_orig_hashRef->{$1} ? $new_to_orig_hashRef->{$1} : $1/ge;
+        print $OUT $line;
+    }
+    close ($OUT);
 }
 sub exit_on_error {
     my $error_string=shift;
